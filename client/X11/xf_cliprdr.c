@@ -61,7 +61,8 @@ struct xf_clipboard
 	Window root_window;
 	Atom clipboard_atom;
 	Atom property_atom;
-	Atom identity_atom;
+
+	Atom raw_transfer_atom;
 
 	int numClientFormats;
 	xfCliprdrFormat clientFormats[20];
@@ -114,11 +115,20 @@ static void xf_cliprdr_check_owner(xfClipboard* clipboard)
 	}
 }
 
-static BOOL xf_cliprdr_is_self_owned(xfClipboard* clipboard)
+static void xf_cliprdr_set_raw_transfer_enabled(xfClipboard* clipboard, BOOL enabled)
+{
+	UINT32 data = enabled;
+	xfContext* xfc = clipboard->xfc;
+
+	XChangeProperty(xfc->display, xfc->drawable, clipboard->raw_transfer_atom,
+			XA_INTEGER, 32, PropModeReplace, (BYTE*) &data, 1);
+}
+
+static BOOL xf_cliprdr_is_raw_transfer_available(xfClipboard* clipboard)
 {
 	Atom type;
-	UINT32 id = 0;
-	UINT32* pid = NULL;
+	UINT32 is_enabled = 0;
+	UINT32* data = NULL;
 	int format, result = 0;
 	unsigned long length;
 	unsigned long bytes_left;
@@ -129,14 +139,14 @@ static BOOL xf_cliprdr_is_self_owned(xfClipboard* clipboard)
 	if (clipboard->owner != None)
 	{
 		result = XGetWindowProperty(xfc->display, clipboard->owner,
-			clipboard->identity_atom, 0, 4, 0, XA_INTEGER,
-			&type, &format, &length, &bytes_left, (BYTE**) &pid);
+			clipboard->raw_transfer_atom, 0, 4, 0, XA_INTEGER,
+			&type, &format, &length, &bytes_left, (BYTE**) &data);
 	}
 
-	if (pid)
+	if (data)
 	{
-		id = *pid;
-		XFree(pid);
+		is_enabled = *data;
+		XFree(data);
 	}
 
 	if ((clipboard->owner == None) || (clipboard->owner == xfc->drawable))
@@ -145,7 +155,7 @@ static BOOL xf_cliprdr_is_self_owned(xfClipboard* clipboard)
 	if (result != Success)
 		return FALSE;
 
-	return (id ? TRUE : FALSE);
+	return (is_enabled ? TRUE : FALSE);
 }
 
 static BOOL xf_cliprdr_formats_equal(const CLIPRDR_FORMAT* server, const xfCliprdrFormat* client)
@@ -641,7 +651,7 @@ static BOOL xf_cliprdr_process_selection_clear(xfClipboard* clipboard, XEvent* x
 {
 	xfContext* xfc = clipboard->xfc;
 
-	if (xf_cliprdr_is_self_owned(clipboard))
+	if (xf_cliprdr_is_raw_transfer_available(clipboard))
 		return FALSE;
 
 	XDeleteProperty(xfc->display, clipboard->root_window, clipboard->property_atom);
@@ -918,7 +928,7 @@ static int xf_cliprdr_server_format_data_request(CliprdrClientContext* context, 
 	xfClipboard* clipboard = (xfClipboard*) context->custom;
 	xfContext* xfc = clipboard->xfc;
 
-	if (xf_cliprdr_is_self_owned(clipboard))
+	if (xf_cliprdr_is_raw_transfer_available(clipboard))
 	{
 		format = xf_cliprdr_get_client_format_by_id(clipboard, CF_RAW);
 
@@ -1058,7 +1068,6 @@ static int xf_cliprdr_server_format_data_response(CliprdrClientContext* context,
 xfClipboard* xf_clipboard_new(xfContext* xfc)
 {
 	int n;
-	UINT32 id;
 	rdpChannels* channels;
 	xfClipboard* clipboard;
 
@@ -1085,12 +1094,10 @@ xfClipboard* xf_clipboard_new(xfContext* xfc)
 		return NULL;
 	}
 
-	id = 1;
 	clipboard->property_atom = XInternAtom(xfc->display, "_FREERDP_CLIPRDR", FALSE);
-	clipboard->identity_atom = XInternAtom(xfc->display, "_FREERDP_CLIPRDR_ID", FALSE);
+	clipboard->raw_transfer_atom = XInternAtom(xfc->display, "_FREERDP_CLIPRDR_RAW", FALSE);
 
-	XChangeProperty(xfc->display, xfc->drawable, clipboard->identity_atom,
-			XA_INTEGER, 32, PropModeReplace, (BYTE*) &id, 1);
+	xf_cliprdr_set_raw_transfer_enabled(clipboard, TRUE);
 
 	XSelectInput(xfc->display, clipboard->root_window, PropertyChangeMask);
 
