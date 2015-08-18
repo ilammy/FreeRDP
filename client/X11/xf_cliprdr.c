@@ -804,21 +804,6 @@ int xf_cliprdr_send_client_format_list_response(xfClipboard* clipboard, BOOL sta
 	return 1;
 }
 
-int xf_cliprdr_send_client_format_data_request(xfClipboard* clipboard, UINT32 formatId)
-{
-	CLIPRDR_FORMAT_DATA_REQUEST formatDataRequest;
-
-	formatDataRequest.msgType = CB_FORMAT_DATA_REQUEST;
-	formatDataRequest.msgFlags = CB_RESPONSE_OK;
-
-	formatDataRequest.requestedFormatId = formatId;
-	clipboard->requestedFormatId = formatId;
-
-	clipboard->context->ClientFormatDataRequest(clipboard->context, &formatDataRequest);
-
-	return 1;
-}
-
 static int xf_cliprdr_monitor_ready(CliprdrClientContext* context, CLIPRDR_MONITOR_READY* monitorReady)
 {
 	xfClipboard* clipboard = (xfClipboard*) context->custom;
