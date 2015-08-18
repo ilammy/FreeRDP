@@ -693,7 +693,7 @@ int cliprdr_client_file_contents_response(CliprdrClientContext* context, CLIPRDR
 	if (fileContentsResponse->dwFlags & FILECONTENTS_SIZE)
 		fileContentsResponse->cbRequested = sizeof(UINT64);
 
-	s = cliprdr_packet_new(CB_FILECONTENTS_REQUEST, 0,
+	s = cliprdr_packet_new(CB_FILECONTENTS_REQUEST, fileContentsResponse->msgFlags,
 			4 + fileContentsResponse->cbRequested);
 
 	Stream_Write_UINT32(s, fileContentsResponse->streamId); /* streamId (4 bytes) */
