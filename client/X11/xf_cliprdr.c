@@ -99,6 +99,7 @@ struct xf_clipboard
 	BOOL xfixes_supported;
 
 	/* File clipping */
+	BOOL streams_supported;
 	char* tempdir;
 };
 
@@ -942,6 +943,9 @@ int xf_cliprdr_send_client_capabilities(xfClipboard* clipboard)
 	generalCapabilitySet.version = CB_CAPS_VERSION_2;
 	generalCapabilitySet.generalFlags = CB_USE_LONG_FORMAT_NAMES;
 
+	if (clipboard->streams_supported && clipboard->tempdir)
+		generalCapabilitySet.generalFlags |= CB_STREAM_FILECLIP_ENABLED | CB_FILECLIP_NO_FILE_PATHS;
+
 	clipboard->context->ClientCapabilities(clipboard->context, &capabilities);
 
 	return 1;
@@ -996,12 +1000,31 @@ int xf_cliprdr_send_client_format_list_response(xfClipboard* clipboard, BOOL sta
 	return 1;
 }
 
+static void xf_cliprdr_register_file_transfer_format(xfClipboard* clipboard)
+{
+	xfContext* xfc = clipboard->xfc;
+
+	if (clipboard->streams_supported && clipboard->tempdir)
+	{
+		int n = clipboard->numClientFormats;
+
+		clipboard->clientFormats[n].atom = XInternAtom(xfc->display, "x-special/gnome-copied-files", False);
+		clipboard->clientFormats[n].formatId = 0xC007; // TODO: better constant
+		clipboard->clientFormats[n].formatName = strdup("FileGroupDescriptorW");
+
+		clipboard->numClientFormats++;
+	}
+}
+
 static int xf_cliprdr_monitor_ready(CliprdrClientContext* context, CLIPRDR_MONITOR_READY* monitorReady)
 {
 	xfClipboard* clipboard = (xfClipboard*) context->custom;
 
+	xf_cliprdr_register_file_transfer_format(clipboard);
+
 	xf_cliprdr_send_client_capabilities(clipboard);
 	xf_cliprdr_send_client_format_list(clipboard);
+
 	clipboard->sync = TRUE;
 
 	return 1;
@@ -1009,7 +1032,30 @@ static int xf_cliprdr_monitor_ready(CliprdrClientContext* context, CLIPRDR_MONIT
 
 static int xf_cliprdr_server_capabilities(CliprdrClientContext* context, CLIPRDR_CAPABILITIES* capabilities)
 {
-	//xfClipboard* clipboard = (xfClipboard*) context->custom;
+	UINT32 i;
+	CLIPRDR_CAPABILITY_SET* caps;
+	CLIPRDR_GENERAL_CAPABILITY_SET* generalCaps;
+	BYTE* capsPtr = (BYTE*) capabilities->capabilitySets;
+	xfClipboard* clipboard = (xfClipboard*) context->custom;
+
+	clipboard->streams_supported = FALSE;
+
+	for (i = 0; i < capabilities->cCapabilitiesSets; i++)
+	{
+		caps = (CLIPRDR_CAPABILITY_SET*) capsPtr;
+
+		if (caps->capabilitySetType == CB_CAPSTYPE_GENERAL)
+		{
+			generalCaps = (CLIPRDR_GENERAL_CAPABILITY_SET*) caps;
+
+			if (generalCaps->generalFlags & CB_STREAM_FILECLIP_ENABLED)
+			{
+				clipboard->streams_supported = TRUE;
+			}
+		}
+
+		capsPtr += caps->capabilitySetLength;
+	}
 
 	return 1;
 }
