@@ -39,6 +39,7 @@
 #include <freerdp/channels/channels.h>
 
 #include "xf_cliprdr.h"
+#include "xf_cliprdr_files.h"
 
 #define TAG CLIENT_TAG("x11")
 
@@ -96,6 +97,9 @@ struct xf_clipboard
 	int xfixes_event_base;
 	int xfixes_error_base;
 	BOOL xfixes_supported;
+
+	/* File clipping */
+	char* tempdir;
 };
 
 int xf_cliprdr_send_client_format_list(xfClipboard* clipboard);
@@ -1363,6 +1367,8 @@ xfClipboard* xf_clipboard_new(xfContext* xfc)
 
 	clipboard->incr_atom = XInternAtom(xfc->display, "INCR", FALSE);
 
+	clipboard->tempdir = xf_cliprdr_initialize_temporary_directory();
+
 	return clipboard;
 }
 
@@ -1390,9 +1396,12 @@ void xf_clipboard_free(xfClipboard* clipboard)
 
 	ClipboardDestroy(clipboard->system);
 
+	xf_cliprdr_remove_temporary_directory(clipboard->tempdir);
+
 	free(clipboard->data);
 	free(clipboard->respond);
 	free(clipboard->incr_data);
+	free(clipboard->tempdir);
 	free(clipboard);
 }
 

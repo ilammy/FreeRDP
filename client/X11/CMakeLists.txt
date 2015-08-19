@@ -42,6 +42,8 @@ set(${MODULE_PREFIX}_SRCS
 	xf_channels.h
 	xf_cliprdr.c
 	xf_cliprdr.h
+	xf_cliprdr_files.c
+	xf_cliprdr_files.h
 	xf_monitor.c
 	xf_monitor.h
 	xf_graphics.c
