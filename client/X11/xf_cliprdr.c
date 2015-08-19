@@ -1049,8 +1049,11 @@ static int xf_cliprdr_server_format_data_response(CliprdrClientContext* context,
 		DstSize = 0;
 		pDstData = (BYTE*) ClipboardGetData(clipboard->system, dstFormatId, &DstSize);
 
-		if ((DstSize > 1) && nullTerminated)
-			DstSize--;
+		if (nullTerminated)
+		{
+			while (DstSize > 0 && pDstData[DstSize - 1] == '\0')
+				DstSize--;
+		}
 	}
 
 	clipboard->data = pDstData;
