@@ -435,6 +435,68 @@ int ArrayList_LastIndexOf(wArrayList *arrayList, void *obj, int startIndex, int 
 	return index;
 }
 
+/**
+ * Sorts the elements in the entire ArrayList.
+ *
+ * Sorts the elements in the entire ArrayList using the specified comparer.
+ */
+
+static int partition(void** objects, OBJECT_COMPARE_FN comparer, int left, int right)
+{
+	void* pivot = objects[left + (right - left) / 2];
+	int L = left;
+	int R = right;
+
+	while (L <= R)
+	{
+		while (L <= right && comparer(objects[L], pivot) < 0)
+			L++;
+
+		while (left <= R && comparer(objects[R], pivot) > 0)
+			R--;
+
+		if (L <= R)
+		{
+			void* tmp = objects[L];
+			objects[L] = objects[R];
+			objects[R] = tmp;
+
+			L++;
+			R--;
+		}
+	}
+
+	return L;
+}
+
+static void quicksort(void** objects, OBJECT_COMPARE_FN comparer, int left, int right)
+{
+	int mid = partition(objects, comparer, left, right);
+
+	if (left < mid - 1)
+		quicksort(objects, comparer, left, mid - 1);
+
+	if (mid < right)
+		quicksort(objects, comparer, mid, right);
+}
+
+void ArrayList_Sort(wArrayList *arrayList)
+{
+	if (arrayList->object.fnObjectCompare)
+		ArrayList_SortWith(arrayList, arrayList->object.fnObjectCompare);
+}
+
+void ArrayList_SortWith(wArrayList *arrayList, OBJECT_COMPARE_FN comparer)
+{
+	if (arrayList->synchronized)
+		EnterCriticalSection(&arrayList->lock);
+
+	quicksort(arrayList->array, comparer, 0, arrayList->size - 1);
+
+	if (arrayList->synchronized)
+		LeaveCriticalSection(&arrayList->lock);
+}
+
 static BOOL ArrayList_DefaultCompare(void *objA, void *objB)
 {
 	return objA == objB ? TRUE : FALSE;

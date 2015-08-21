@@ -165,6 +165,9 @@ WINPR_API BOOL ArrayList_RemoveAt(wArrayList* arrayList, int index);
 WINPR_API int ArrayList_IndexOf(wArrayList* arrayList, void* obj, int startIndex, int count);
 WINPR_API int ArrayList_LastIndexOf(wArrayList* arrayList, void* obj, int startIndex, int count);
 
+WINPR_API void ArrayList_Sort(wArrayList* arrayList);
+WINPR_API void ArrayList_SortWith(wArrayList* arrayList, OBJECT_COMPARE_FN comparer);
+
 WINPR_API wArrayList* ArrayList_New(BOOL synchronized);
 WINPR_API void ArrayList_Free(wArrayList* arrayList);
 
