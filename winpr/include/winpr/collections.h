@@ -40,6 +40,7 @@ typedef void (*OBJECT_INIT_FN)(void* obj);
 typedef void (*OBJECT_UNINIT_FN)(void* obj);
 typedef void (*OBJECT_FREE_FN)(void* obj);
 typedef BOOL (*OBJECT_EQUALS_FN)(void* objA, void* objB);
+typedef int (*OBJECT_COMPARE_FN)(void* objA, void* objB);
 
 struct _wObject
 {
@@ -48,6 +49,7 @@ struct _wObject
 	OBJECT_UNINIT_FN fnObjectUninit;
 	OBJECT_FREE_FN fnObjectFree;
 	OBJECT_EQUALS_FN fnObjectEquals;
+	OBJECT_COMPARE_FN fnObjectCompare;
 };
 typedef struct _wObject wObject;
 
