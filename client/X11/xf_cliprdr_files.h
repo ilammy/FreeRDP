@@ -38,6 +38,8 @@ struct file_information
 
 	/* Local */
 	char* localName;
+	UINT64 received;
+	int failureCount;
 };
 
 char* xf_cliprdr_initialize_temporary_directory(void);

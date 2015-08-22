@@ -43,6 +43,8 @@
 
 #define TAG CLIENT_TAG("x11")
 
+#define FILE_STREAM_BASE 0x80000000
+
 struct xf_cliprdr_format
 {
 	Atom atom;
@@ -101,6 +103,8 @@ struct xf_clipboard
 	/* File clipping */
 	BOOL streams_supported;
 	char* tempdir;
+	wArrayList* files;
+	int next_file;
 };
 
 int xf_cliprdr_send_client_format_list(xfClipboard* clipboard);
@@ -1075,6 +1079,181 @@ static int xf_cliprdr_server_capabilities(CliprdrClientContext* context, CLIPRDR
 	return 1;
 }
 
+static void xf_cliprdr_send_file_size_request(xfClipboard* clipboard, UINT32 listIndex, int localIndex)
+{
+	CLIPRDR_FILE_CONTENTS_REQUEST request;
+
+	ZeroMemory(&request, sizeof(CLIPRDR_FILE_CONTENTS_REQUEST));
+
+	request.streamId = FILE_STREAM_BASE + localIndex;
+	request.listIndex = listIndex;
+	request.dwFlags = FILECONTENTS_SIZE;
+	request.cbRequested = sizeof(UINT64);
+
+	clipboard->context->ClientFileContentsRequest(clipboard->context, &request);
+}
+
+static void xf_cliprdr_send_file_contents_request(xfClipboard* clipboard, UINT32 listIndex, int localIndex, UINT64 offset, UINT32 length)
+{
+	CLIPRDR_FILE_CONTENTS_REQUEST request;
+
+	ZeroMemory(&request, sizeof(CLIPRDR_FILE_CONTENTS_REQUEST));
+
+	request.streamId = FILE_STREAM_BASE + localIndex;
+	request.listIndex = listIndex;
+	request.dwFlags = FILECONTENTS_RANGE;
+	request.nPositionHigh = (UINT32) (offset >> 32);
+	request.nPositionLow = (UINT32) (offset);
+	request.cbRequested = length;
+
+	clipboard->context->ClientFileContentsRequest(clipboard->context, &request);
+}
+
+static fileInfo* xf_cliprdr_find_next_file(xfClipboard* clipboard)
+{
+	int i;
+	int fileCount = ArrayList_Count(clipboard->files);
+	fileInfo* found = NULL;
+
+	for (i = clipboard->next_file; i < fileCount; i++)
+	{
+		fileInfo* file = (fileInfo*) ArrayList_GetItem(clipboard->files, i);
+
+		if (file->directory)
+			continue;
+
+		if (file->failureCount > 3) // TODO: remove hardcode
+		{
+			WLog_WARN(TAG, "skipping '%s' due to multiple errors", file->remote_name);
+			continue;
+		}
+
+		if (!file->have_size || file->received < file->size)
+		{
+			found = file;
+			break;
+		}
+	}
+
+	clipboard->next_file = i;
+	return found;
+}
+
+static void xf_cliprdr_request_next_file_contents(xfClipboard* clipboard)
+{
+	fileInfo* file = xf_cliprdr_find_next_file(clipboard);
+
+	if (!file)
+	{
+		xf_cliprdr_finalize_file_paste(clipboard);
+
+		return;
+	}
+
+	if (!file->have_size)
+	{
+		xf_cliprdr_send_file_size_request(clipboard, file->listIndex, clipboard->next_file);
+	}
+	else
+	{
+		/* In fact, file->size will not be larger than 2 GB, so this should fit into UINT32 */
+		UINT32 requested = MIN(file->size - file->received, 128 * 1024); // TODO: remove hardcode
+
+		xf_cliprdr_send_file_contents_request(clipboard, file->listIndex, clipboard->next_file, file->received, requested);
+	}
+}
+
+static int xf_cliprdr_process_file_descriptor_list(xfClipboard* clipboard, BYTE* data, UINT32 size)
+{
+	ArrayList_Free(clipboard->files);
+	clipboard->files = xf_cliprdr_parse_file_descriptor_list(data, size);
+
+	if (!clipboard->files)
+		goto error;
+
+	if (!xf_cliprdr_initialize_transfer(clipboard->tempdir, clipboard->files))
+		goto error;
+
+	clipboard->next_file = 0;
+	xf_cliprdr_request_next_file_contents(clipboard);
+
+	return 1;
+
+error:
+	ArrayList_Free(clipboard->files);
+	clipboard->files = NULL;
+	return -1;
+}
+
+static int xf_cliprdr_process_filecontents_response(xfClipboard* clipboard, CLIPRDR_FILE_CONTENTS_RESPONSE* response)
+{
+	fileInfo* file = NULL;
+	int fileCount = ArrayList_Count(clipboard->files);
+
+	if (response->streamId < FILE_STREAM_BASE || response->streamId >= FILE_STREAM_BASE + fileCount)
+	{
+		WLog_ERR(TAG, "unexpected streamId=0x%04X", response->streamId);
+		return -1;
+	}
+
+	file = ArrayList_GetItem(clipboard->files, response->streamId - FILE_STREAM_BASE);
+
+	if (!file->have_size)
+	{
+		if (response->msgFlags != CB_RESPONSE_OK)
+		{
+			WLog_ERR(TAG, "server failed to send file size for '%s'", file->remote_name);
+			goto error;
+		}
+
+		if (response->dataLen != sizeof(UINT64))
+		{
+			WLog_ERR(TAG, "unexpected dataLen=%u for '%s'", response->dataLen, file->remote_name);
+			goto error;
+		}
+
+		file->have_size = TRUE;
+		file->size =
+			(((UINT64) response->requestedData[0]) <<  0) +
+			(((UINT64) response->requestedData[1]) <<  8) +
+			(((UINT64) response->requestedData[2]) << 16) +
+			(((UINT64) response->requestedData[3]) << 24) +
+			(((UINT64) response->requestedData[4]) << 32) +
+			(((UINT64) response->requestedData[5]) << 40) +
+			(((UINT64) response->requestedData[6]) << 48) +
+			(((UINT64) response->requestedData[7]) << 56);
+	}
+	else
+	{
+		if (response->msgFlags != CB_RESPONSE_OK)
+		{
+			WLog_ERR(TAG, "server failed to send file contents for '%s'", file->remote_name);
+			goto error;
+		}
+
+		file->received += xf_cliprdr_append_file_data(file, response->requestedData, response->cbRequested);
+		// TODO: failures?
+	}
+
+	file->failureCount = 0;
+	return 1;
+
+error:
+	file->failureCount++;
+	return -1;
+}
+
+static int xf_cliprdr_server_filecontents_response(CliprdrClientContext* context, CLIPRDR_FILE_CONTENTS_RESPONSE* response)
+{
+	xfClipboard* clipboard = (xfClipboard*) context->custom;
+
+	xf_cliprdr_process_filecontents_response(clipboard, response);
+
+	xf_cliprdr_request_next_file_contents(clipboard); // TODO: vicious cycles when cannot retrieve file contents
+
+	return 1; // TODO: really?
+}
+
 static int xf_cliprdr_server_format_list(CliprdrClientContext* context, CLIPRDR_FORMAT_LIST* formatList)
 {
 	int i, j;
@@ -1248,6 +1427,13 @@ static int xf_cliprdr_server_format_data_response(CliprdrClientContext* context,
 			srcFormatId = ClipboardGetFormatId(clipboard->system, "HTML Format");
 			dstFormatId = ClipboardGetFormatId(clipboard->system, "text/html");
 			nullTerminated = TRUE;
+		}
+		else if (strcmp(clipboard->data_format_name, "FileGroupDescriptorW") == 0)
+		{
+			/* Immediately return, delay providing clipboard data to requestor.
+			   This call only starts the file sync process. The data will be
+			   provided as soon as the download is complete. */
+			return xf_cliprdr_process_file_descriptor_list(clipboard, data, size);
 		}
 	}
 	else
@@ -1430,6 +1616,9 @@ xfClipboard* xf_clipboard_new(xfContext* xfc)
 
 	clipboard->tempdir = xf_cliprdr_initialize_temporary_directory();
 
+	clipboard->files = NULL;
+	clipboard->next_file = 0;
+
 	return clipboard;
 }
 
@@ -1459,6 +1648,8 @@ void xf_clipboard_free(xfClipboard* clipboard)
 
 	xf_cliprdr_remove_temporary_directory(clipboard->tempdir);
 
+	ArrayList_Free(clipboard->files);
+
 	free(clipboard->data);
 	free(clipboard->respond);
 	free(clipboard->incr_data);
@@ -1478,6 +1669,7 @@ void xf_cliprdr_init(xfContext* xfc, CliprdrClientContext* cliprdr)
 	cliprdr->ServerFormatListResponse = xf_cliprdr_server_format_list_response;
 	cliprdr->ServerFormatDataRequest = xf_cliprdr_server_format_data_request;
 	cliprdr->ServerFormatDataResponse = xf_cliprdr_server_format_data_response;
+	cliprdr->ServerFileContentsResponse = xf_cliprdr_server_filecontents_response;
 }
 
 void xf_cliprdr_uninit(xfContext* xfc, CliprdrClientContext* cliprdr)
