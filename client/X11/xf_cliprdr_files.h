@@ -35,10 +35,15 @@ struct file_information
 	char* remoteName;
 	BOOL haveSize;
 	UINT64 size;
+
+	/* Local */
+	char* localName;
 };
 
 char* xf_cliprdr_initialize_temporary_directory(void);
 void xf_cliprdr_remove_temporary_directory(const char* dir);
+
+BOOL xf_cliprdr_initialize_transfer(const char* tempdir, wArrayList* files);
 
 wArrayList* xf_cliprdr_parse_file_descriptor_list(BYTE* data, UINT32 size);
 

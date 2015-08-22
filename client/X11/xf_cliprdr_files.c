@@ -22,14 +22,51 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <ftw.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "xf_cliprdr_files.h"
 
 #define TAG CLIENT_TAG("x11.cliprdr")
 
 #define CLIPRDR_TEMPDIR_PATTERN "/tmp/freerdp.cliprdr.XXXXXX"
+#define CLIPRDR_TRANFSER_PATTERN "transfer.XXXXXX"
+
+#define DEFAULT_DIR_PERMISSIONS  0755
+#define DEFAULT_FILE_PERMISSIONS 0644
+
+/*
+ *  Utilities
+ */
+
+static char* concat_file_path(const char* strA, const char* strB)
+{
+	char* buffer;
+	size_t lenA;
+	size_t lenS;
+	size_t lenB;
+
+	if (!strA || !strB)
+		return NULL;
+
+	lenA = strlen(strA);
+	lenS = strlen("/");
+	lenB = strlen(strB);
+
+	buffer = malloc(lenA + lenS + lenB + 1);
+	if (!buffer)
+		return NULL;
+
+	memcpy(&buffer[0], strA, lenA);
+	memcpy(&buffer[lenA], "/", lenS);
+	memcpy(&buffer[lenA + lenS], strB, lenB);
+	buffer[lenA + lenS + lenB] = '\0';
+
+	return buffer;
+}
 
 /*
  *  Transfer temporary directory
@@ -114,6 +151,92 @@ void xf_cliprdr_remove_temporary_directory(const char* dir)
 
 	if (err)
 		WLog_ERR(TAG, "failed to remove temporary directory '%s': %d %s", dir, err, strerror(err));
+}
+
+static char* xf_cliprdr_create_transfer_directory(const char* tempdir)
+{
+	int err = 0;
+	char* buffer = NULL;
+
+	errno = 0;
+
+	buffer = concat_file_path(tempdir, CLIPRDR_TRANFSER_PATTERN);
+	if (!buffer)
+		goto error;
+
+	if (!mkdtemp(buffer))
+		goto error;
+
+	return buffer;
+
+error:
+	err = err ? err: errno;
+	WLog_ERR(TAG, "failed to create transfer directory '%s' in '%s': %d %s", buffer, tempdir, err, strerror(err));
+	free(buffer);
+	return NULL;
+}
+
+static BOOL xf_cliprdr_initialize_transfer_directory(const char* tempdir, wArrayList* files)
+{
+	int i;
+	int err = 0;
+	int fileCount;
+	char* filename = NULL;
+
+	fileCount = ArrayList_Count(files);
+
+	for (i = 0; i < fileCount; i++)
+	{
+		fileInfo* file = (fileInfo*) ArrayList_GetItem(files, i);
+
+		if (!file->remoteName)
+			continue;
+
+		errno = 0;
+
+		filename = concat_file_path(tempdir, file->remoteName);
+		if (!filename)
+			goto error;
+
+		if (file->isDirectory)
+		{
+			if (mkdir(filename, DEFAULT_DIR_PERMISSIONS) < 0)
+				goto error;
+		}
+		else
+		{
+			if (creat(filename, DEFAULT_FILE_PERMISSIONS) < 0)
+				goto error;
+		}
+
+		free(file->localName);
+		file->localName = filename;
+	}
+
+	return TRUE;
+
+error:
+	err = err ? err : errno;
+	WLog_ERR(TAG, "failed to initialize transfer for '%s': %d %s", filename, err, strerror(err));
+	free(filename);
+	return FALSE;
+}
+
+BOOL xf_cliprdr_initialize_transfer(const char* tempdir, wArrayList* files)
+{
+	BOOL success = FALSE;
+	char* transfer_directory = NULL;
+
+	if (!tempdir || !files)
+		return FALSE;
+
+	transfer_directory = xf_cliprdr_create_transfer_directory(tempdir);
+	if (!transfer_directory)
+		return FALSE;
+
+	success = xf_cliprdr_initialize_transfer_directory(transfer_directory, files);
+	free(transfer_directory);
+	return success;
 }
 
 /*
