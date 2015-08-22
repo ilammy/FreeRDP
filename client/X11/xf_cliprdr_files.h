@@ -23,7 +23,23 @@
 #include "xf_cliprdr.h"
 #include "xfreerdp.h"
 
+#include <winpr/collections.h>
+
+typedef struct file_information fileInfo;
+
+struct file_information
+{
+	/* Remote */
+	int listIndex;
+	BOOL isDirectory;
+	char* remoteName;
+	BOOL haveSize;
+	UINT64 size;
+};
+
 char* xf_cliprdr_initialize_temporary_directory(void);
 void xf_cliprdr_remove_temporary_directory(const char* dir);
+
+wArrayList* xf_cliprdr_parse_file_descriptor_list(BYTE* data, UINT32 size);
 
 #endif /* __XF_CLIPRDR_FILES_H */

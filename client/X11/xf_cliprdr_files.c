@@ -115,3 +115,141 @@ void xf_cliprdr_remove_temporary_directory(const char* dir)
 	if (err)
 		WLog_ERR(TAG, "failed to remove temporary directory '%s': %d %s", dir, err, strerror(err));
 }
+
+/*
+ *  FILE_DESCRIPTOR processing
+ */
+
+static void xf_cliprdr_windows_to_unix(char* str)
+{
+	if (!str)
+		return;
+
+	for (; *str; str++)
+	{
+		if (*str == '\\')
+			*str = '/';
+	}
+}
+
+static void xf_cliprdr_free_file_information(void* ptr)
+{
+	fileInfo* file = (fileInfo*) ptr;
+
+	if (file)
+	{
+		free(file->remoteName);
+		free(file);
+	}
+}
+
+static int xf_cliprdr_compare_by_name(void* ptrA, void* ptrB)
+{
+	fileInfo* fileA = (fileInfo*) ptrA;
+	fileInfo* fileB = (fileInfo*) ptrB;
+
+	if (!fileA->remoteName || !fileB->remoteName)
+		return 0; /* Should never happen, but whatever... */
+
+	return strcmp(fileA->remoteName, fileB->remoteName);
+}
+
+static fileInfo* xf_cliprdr_convert_file_information(const CLIPRDR_FILEDESCRIPTOR* fileDescriptor)
+{
+	fileInfo* file = (fileInfo*) calloc(1, sizeof(fileInfo));
+	if (!file)
+		goto error;
+
+	if (fileDescriptor->flags & FD_ATTRIBUTES)
+	{
+		if (fileDescriptor->fileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		{
+			file->isDirectory = TRUE;
+		}
+	}
+
+	if (fileDescriptor->flags & FD_FILESIZE)
+	{
+		file->haveSize = TRUE;
+		file->size = fileDescriptor->fileSizeHigh;
+		file->size <<= 32;
+		file->size += fileDescriptor->fileSizeLow;
+	}
+
+	if (ConvertFromUnicode(CP_UTF8, 0, (LPCWSTR) fileDescriptor->fileName, -1, &file->remoteName, 0, 0, FALSE) <= 0)
+		goto error;
+
+	xf_cliprdr_windows_to_unix(file->remoteName);
+
+	return file;
+
+error:
+	xf_cliprdr_free_file_information(file);
+	return NULL;
+}
+
+wArrayList* xf_cliprdr_parse_file_descriptor_list(BYTE* data, UINT32 size)
+{
+	UINT32 i;
+	UINT32 cItems = 0;
+	wStream* s = NULL;
+	wArrayList* result = NULL;
+
+	result = ArrayList_New(FALSE);
+	if (!result)
+		goto error;
+
+	result->object.fnObjectFree = xf_cliprdr_free_file_information;
+
+	s = Stream_New(data, size);
+	if (!s)
+		goto error;
+
+	if (Stream_GetRemainingLength(s) < 4)
+		goto error;
+
+	Stream_Read_UINT32(s, cItems); /* cItems (4 bytes) */
+
+	for (i = 0; i < cItems; i++)
+	{
+		fileInfo* file;
+		CLIPRDR_FILEDESCRIPTOR fileDescriptor;
+
+		if (Stream_GetRemainingLength(s) < 592)
+			goto error;
+
+		Stream_Read_UINT32(s, fileDescriptor.flags); /* flags (4 bytes) */
+		Stream_Seek(s, 32); /* reserved1 (32 bytes) */
+		Stream_Read_UINT32(s, fileDescriptor.fileAttributes); /* fileAttributes (4 bytes) */
+		Stream_Seek(s, 16); /* reserved2 (16 bytes) */
+		Stream_Read_UINT64(s, fileDescriptor.lastWriteTime); /* lastWriteTime (8 bytes) */
+		Stream_Read_UINT32(s, fileDescriptor.fileSizeHigh); /* fileSizeHigh (4 bytes) */
+		Stream_Read_UINT32(s, fileDescriptor.fileSizeLow); /* fileSizeLow (4 bytes) */
+		Stream_Read(s, fileDescriptor.fileName, sizeof(fileDescriptor.fileName)); /* fileName (520 bytes) */
+
+		file = xf_cliprdr_convert_file_information(&fileDescriptor);
+		if (!file)
+			goto error;
+
+		file->listIndex = i;
+
+		if (ArrayList_Add(result, (void*) file) < 0)
+			goto error;
+	}
+
+	Stream_Free(s, FALSE);
+
+	/* We will need the file list to be topologically sorted to recreate
+	 * directory structure in a straightforward linear way. In fact, the
+	 * server seems to always send correctly sorted CLIPRDR_FILELIST to us,
+	 * but this is not guaranteed by the spec so we do a sort just in case.
+	 * Lexicographical order is a topological order for file names. */
+	ArrayList_SortWith(result, xf_cliprdr_compare_by_name);
+
+	return result;
+
+error:
+	Stream_Free(s, FALSE);
+	ArrayList_Free(result);
+	return NULL;
+}
