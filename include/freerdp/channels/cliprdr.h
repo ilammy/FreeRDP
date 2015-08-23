@@ -222,6 +222,8 @@ struct _CLIPRDR_FILE_CONTENTS_REQUEST
 	UINT32 nPositionHigh;
 	UINT32 cbRequested;
 	UINT32 clipDataId;
+
+	BOOL haveClipDataId;
 };
 typedef struct _CLIPRDR_FILE_CONTENTS_REQUEST CLIPRDR_FILE_CONTENTS_REQUEST;
 

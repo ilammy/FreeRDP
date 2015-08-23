@@ -249,12 +249,13 @@ static int cliprdr_process_filecontents_request(cliprdrPlugin* cliprdr, wStream*
 	if (!context->custom)
 		return -1;
 
-	if (Stream_GetRemainingLength(s) < 28)
+	if (Stream_GetRemainingLength(s) < 24)
 		return -1;
 
 	request.msgType = CB_FILECONTENTS_REQUEST;
 	request.msgFlags = flags;
 	request.dataLen = length;
+	request.haveClipDataId = FALSE;
 
 	Stream_Read_UINT32(s, request.streamId); /* streamId (4 bytes) */
 	Stream_Read_UINT32(s, request.listIndex); /* listIndex (4 bytes) */
@@ -262,7 +263,12 @@ static int cliprdr_process_filecontents_request(cliprdrPlugin* cliprdr, wStream*
 	Stream_Read_UINT32(s, request.nPositionLow); /* nPositionLow (4 bytes) */
 	Stream_Read_UINT32(s, request.nPositionHigh); /* nPositionHigh (4 bytes) */
 	Stream_Read_UINT32(s, request.cbRequested); /* cbRequested (4 bytes) */
-	Stream_Read_UINT32(s, request.clipDataId); /* clipDataId (4 bytes) */
+
+	if (Stream_GetRemainingLength(s) >= 4)
+	{
+		Stream_Read_UINT32(s, request.clipDataId); /* clipDataId (4 bytes) */
+		request.haveClipDataId = TRUE;
+	}
 
 	if (context->ServerFileContentsRequest)
 		context->ServerFileContentsRequest(context, &request);
@@ -675,7 +681,9 @@ int cliprdr_client_file_contents_request(CliprdrClientContext* context, CLIPRDR_
 	Stream_Write_UINT32(s, fileContentsRequest->nPositionLow); /* nPositionLow (4 bytes) */
 	Stream_Write_UINT32(s, fileContentsRequest->nPositionHigh); /* nPositionHigh (4 bytes) */
 	Stream_Write_UINT32(s, fileContentsRequest->cbRequested); /* cbRequested (4 bytes) */
-	Stream_Write_UINT32(s, fileContentsRequest->clipDataId); /* clipDataId (4 bytes) */
+
+	if (fileContentsRequest->haveClipDataId)
+		Stream_Write_UINT32(s, fileContentsRequest->clipDataId); /* clipDataId (4 bytes) */
 
 	WLog_Print(cliprdr->log, WLOG_DEBUG, "ClientFileContentsRequest: streamId: 0x%04X",
 		fileContentsRequest->streamId);
