@@ -49,4 +49,6 @@ wArrayList* xf_cliprdr_parse_file_descriptor_list(BYTE* data, UINT32 size);
 
 UINT32 xf_cliprdr_append_file_data(fileInfo* file, BYTE* data, UINT32 len);
 
+BYTE* xf_cliprdr_serialize_file_list(wArrayList* files, int* size);
+
 #endif /* __XF_CLIPRDR_FILES_H */

@@ -698,6 +698,21 @@ static void xf_cliprdr_provide_data(xfClipboard* clipboard, XEvent* respond, BYT
 	}
 }
 
+static void xf_cliprdr_finalize_file_paste(xfClipboard* clipboard)
+{
+	xfContext* xfc = clipboard->xfc;
+
+	clipboard->data = xf_cliprdr_serialize_file_list(clipboard->files, &clipboard->data_length);
+
+	xf_cliprdr_provide_data(clipboard, clipboard->respond, clipboard->data, clipboard->data_length);
+
+	XSendEvent(xfc->display, clipboard->respond->xselection.requestor, 0, 0, clipboard->respond);
+	XFlush(xfc->display);
+
+	free(clipboard->respond);
+	clipboard->respond = NULL;
+}
+
 static BOOL xf_cliprdr_process_selection_notify(xfClipboard* clipboard, XEvent* xevent)
 {
 	if (xevent->xselection.target == clipboard->targets[1])

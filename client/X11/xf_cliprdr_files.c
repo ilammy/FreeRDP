@@ -414,3 +414,118 @@ error:
 	WLog_ERR(TAG, "wrote only %u of %u bytes to file '%s': %d %s", written, len, file->local_name, err, strerror(err));
 	return written;
 }
+
+/*
+ * x-special/gnome-copied-files processing
+ */
+
+static BOOL is_toplevel_file(const fileInfo* file)
+{
+	return !strchr(file->remote_name, '/');
+}
+
+static BOOL is_special_character(char c)
+{
+	if (('0' <= c && c <= '9') ||
+	    ('a' <= c && c <= 'z') ||
+	    ('A' <= c && c <= 'Z') ||
+	    (c == '/' || c == '.'))
+	{
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+static const char* hex = "0123456789ABCDEF";
+
+static BYTE* filename_as_uri(const char* filename, size_t* length)
+{
+	size_t i;
+	size_t filename_length;
+	wStream* s = NULL;
+	BYTE* buffer = NULL;
+
+	if (!filename)
+		return NULL;
+
+	filename_length = strlen(filename);
+
+	s = Stream_New(NULL, strlen("file://") + (filename_length * 3) + 1);
+	if (!s)
+		return NULL;
+
+	Stream_Write(s, "file://", strlen("file://"));
+
+	for (i = 0; i < filename_length; i++)
+	{
+		char c = filename[i];
+
+		if (is_special_character(c))
+		{
+			Stream_Write_UINT8(s, '%');
+			Stream_Write_UINT8(s, hex[c / 16]);
+			Stream_Write_UINT8(s, hex[c % 16]);
+		}
+		else
+		{
+			Stream_Write_UINT8(s, c);
+		}
+	}
+
+	Stream_SealLength(s);
+
+	buffer = Stream_Buffer(s);
+	*length = Stream_Length(s);
+	Stream_Free(s, FALSE);
+	return buffer;
+}
+
+BYTE* xf_cliprdr_serialize_file_list(wArrayList* files, int* size)
+{
+	int i;
+	wStream* s;
+	BYTE* buffer = NULL;
+
+	s = Stream_New(NULL, 1024); // TODO: rationalize default value
+	if (!s)
+		goto error;
+
+	Stream_Write(s, "copy", strlen("copy"));
+
+	for (i = 0; i < ArrayList_Count(files); i++)
+	{
+		BYTE* uri;
+		size_t len;
+		fileInfo* file = (fileInfo*) ArrayList_GetItem(files, i);
+
+		if (!is_toplevel_file(file))
+			continue;
+
+		uri = filename_as_uri(file->local_name, &len);
+		if (!uri)
+			goto error;
+
+		if (!Stream_EnsureRemainingCapacity(s, len + 1))
+		{
+			free(uri);
+			goto error;
+		}
+
+		Stream_Write_UINT8(s, '\n');
+		Stream_Write(s, uri, len);
+
+		free(uri);
+	}
+
+	Stream_SealLength(s);
+
+	*size = Stream_Length(s);
+	buffer = Stream_Buffer(s);
+	Stream_Free(s, FALSE);
+	return buffer;
+
+error:
+	Stream_Free(s, TRUE);
+	return NULL;
+}
