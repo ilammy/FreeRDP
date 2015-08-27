@@ -47,4 +47,6 @@ BOOL xf_cliprdr_initialize_transfer(const char* tempdir, wArrayList* files);
 
 wArrayList* xf_cliprdr_parse_file_descriptor_list(BYTE* data, UINT32 size);
 
+UINT32 xf_cliprdr_append_file_data(fileInfo* file, BYTE* data, UINT32 len);
+
 #endif /* __XF_CLIPRDR_FILES_H */

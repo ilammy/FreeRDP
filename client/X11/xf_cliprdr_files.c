@@ -376,3 +376,41 @@ error:
 	ArrayList_Free(result);
 	return NULL;
 }
+
+/*
+ * File system interaction
+ */
+
+UINT32 xf_cliprdr_append_file_data(fileInfo* file, BYTE* data, UINT32 len)
+{
+	int fd = -1;
+	int err = 0;
+	UINT32 written = 0;
+	UINT32 remaining = len;
+
+	errno = 0;
+
+	fd = open(file->local_name, O_WRONLY | O_APPEND);
+	if (fd < 0)
+		goto error;
+
+	while (remaining > 0)
+	{
+		int res = write(fd, data + written, remaining);
+		if (res < 0)
+			goto error;
+
+		written += res;
+		remaining -= res;
+	}
+
+	if (close(fd) < 0)
+		goto error;
+
+	return written;
+
+error:
+	err = err ? err : errno;
+	WLog_ERR(TAG, "wrote only %u of %u bytes to file '%s': %d %s", written, len, file->local_name, err, strerror(err));
+	return written;
+}
