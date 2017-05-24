@@ -33,6 +33,10 @@
 #include "posix.h"
 #endif
 
+#ifdef WITH_WCLIPBOARD_FUSE
+#include "fuse.h"
+#endif
+
 #include "../log.h"
 #define TAG WINPR_TAG("clipboard")
 
@@ -549,6 +553,18 @@ void ClipboardInitRemoteFileSubsystem(wClipboard* clipboard)
 	 * There can be only one remote file subsystem active.
 	 * Return as soon as initialization succeeds.
 	 */
+
+#ifdef WITH_WCLIPBOARD_FUSE
+	if (ClipboardInitFuseFileSubsystem(clipboard))
+	{
+		WLog_INFO(TAG, "initialized FUSE remote file subsystem");
+		return;
+	}
+	else
+	{
+		WLog_WARN(TAG, "failed to initialize FUSE remote file subsystem");
+	}
+#endif
 
 	WLog_INFO(TAG, "failed to initialize remote file subsystem, file transfer not available");
 }

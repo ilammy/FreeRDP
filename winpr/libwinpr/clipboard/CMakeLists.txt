@@ -28,6 +28,16 @@ if(HAVE_UNISTD_H)
 	)
 endif()
 
+if(LIBFUSE_FOUND)
+	winpr_include_directory_add(${LIBFUSE_INCLUDE_DIRS})
+	winpr_library_add(${LIBFUSE_LIBRARIES})
+	winpr_definition_add(-DWITH_WCLIPBOARD_FUSE)
+	winpr_module_add(
+		fuse.h
+		fuse.c
+	)
+endif()
+
 if(BUILD_TESTING)
 	add_subdirectory(test)
 endif()

@@ -149,6 +149,12 @@ else()
 	endif()
 endif()
 
+set(LIBFUSE_FEATURE_TYPE "RECOMMENDED")
+set(LIBFUSE_FEATURE_PURPOSE "clipboard support")
+set(LIBFUSE_FEATURE_DESCRIPTION "transfering remote files to local machine")
+
+find_feature(libfuse ${LIBFUSE_FEATURE_TYPE} ${LIBFUSE_FEATURE_PURPOSE} ${LIBFUSE_FEATURE_DESCRIPTION})
+
 # Default to release build type
 if(NOT CMAKE_BUILD_TYPE)
    set(CMAKE_BUILD_TYPE "Release")
