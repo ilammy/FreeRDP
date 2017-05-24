@@ -1355,6 +1355,7 @@ static UINT xf_cliprdr_server_format_data_response(CliprdrClientContext*
 	BOOL nullTerminated = FALSE;
 	UINT32 size = formatDataResponse->dataLen;
 	BYTE* data = formatDataResponse->requestedFormatData;
+	BOOL freeData = FALSE;
 	xfClipboard* clipboard = (xfClipboard*) context->custom;
 	xfContext* xfc = clipboard->xfc;
 
@@ -1380,6 +1381,29 @@ static UINT xf_cliprdr_server_format_data_response(CliprdrClientContext*
 			srcFormatId = ClipboardGetFormatId(clipboard->system, "HTML Format");
 			dstFormatId = ClipboardGetFormatId(clipboard->system, "text/html");
 			nullTerminated = TRUE;
+		}
+
+		if (strcmp(clipboard->data_format_name, "FileGroupDescriptorW") == 0)
+		{
+			UINT error = NO_ERROR;
+			FILEDESCRIPTOR* file_array = NULL;
+			UINT32 file_count = 0;
+
+			srcFormatId = ClipboardGetFormatId(clipboard->system, "FileGroupDescriptorW");
+			dstFormatId = ClipboardGetFormatId(clipboard->system, "text/uri-list");
+
+			/*
+			 * File lists require a bit of postprocessing to convert them from
+			 * server's CLIPRDR_FILELIST to FILDESCRIPTORs expected by WinPR.
+			 */
+			error = cliprdr_parse_file_list(data, size, &file_array, &file_count);
+
+			if (error)
+				WLog_ERR(TAG, "failed to parse CLIPRDR_FILELIST: 0x%08X", error);
+
+			data = (BYTE*) file_array;
+			size = file_count * sizeof(FILEDESCRIPTOR);
+			freeData = TRUE;
 		}
 	}
 	else
@@ -1449,8 +1473,13 @@ static UINT xf_cliprdr_server_format_data_response(CliprdrClientContext*
 	XSendEvent(xfc->display, clipboard->respond->xselection.requestor, 0, 0,
 	           clipboard->respond);
 	XFlush(xfc->display);
+
 	free(clipboard->respond);
 	clipboard->respond = NULL;
+
+	if (freeData)
+		free(data);
+
 	return CHANNEL_RC_OK;
 }
 
