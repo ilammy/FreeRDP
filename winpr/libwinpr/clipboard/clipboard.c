@@ -543,6 +543,16 @@ void ClipboardInitLocalFileSubsystem(wClipboard* clipboard)
 	WLog_INFO(TAG, "failed to initialize local file subsystem, file transfer not available");
 }
 
+void ClipboardInitRemoteFileSubsystem(wClipboard* clipboard)
+{
+	/*
+	 * There can be only one remote file subsystem active.
+	 * Return as soon as initialization succeeds.
+	 */
+
+	WLog_INFO(TAG, "failed to initialize remote file subsystem, file transfer not available");
+}
+
 wClipboard* ClipboardCreate()
 {
 	wClipboard* clipboard;
@@ -571,6 +581,7 @@ wClipboard* ClipboardCreate()
 	clipboard->delegate.clipboard = clipboard;
 
 	ClipboardInitLocalFileSubsystem(clipboard);
+	ClipboardInitRemoteFileSubsystem(clipboard);
 
 	return clipboard;
 
@@ -591,8 +602,17 @@ void ClipboardDestroy(wClipboard* clipboard)
 	if (!clipboard)
 		return;
 
-	ArrayList_Free(clipboard->localFiles);
-	clipboard->localFiles = NULL;
+	if (clipboard->freeLocalFileSubsystem)
+		clipboard->freeLocalFileSubsystem(clipboard->localFileSubsystem);
+
+	clipboard->localFileSubsystem = NULL;
+	clipboard->freeLocalFileSubsystem = NULL;
+
+	if (clipboard->freeRemoteFileSubsystem)
+		clipboard->freeRemoteFileSubsystem(clipboard->remoteFileSubsystem);
+
+	clipboard->remoteFileSubsystem = NULL;
+	clipboard->freeRemoteFileSubsystem = NULL;
 
 	for (index = 0; index < clipboard->numFormats; index++)
 	{

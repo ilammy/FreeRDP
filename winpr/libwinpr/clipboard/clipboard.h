@@ -26,6 +26,7 @@
 
 typedef struct _wClipboardFormat wClipboardFormat;
 typedef struct _wClipboardSynthesizer wClipboardSynthesizer;
+typedef void (*wClipboardSubsystemFreeFn)(void*);
 
 struct _wClipboardFormat
 {
@@ -62,8 +63,10 @@ struct _wClipboard
 
 	/* clipboard file handling */
 
-	wArrayList* localFiles;
-	UINT32 fileListSequenceNumber;
+	void* localFileSubsystem;
+	void* remoteFileSubsystem;
+	wClipboardSubsystemFreeFn freeLocalFileSubsystem;
+	wClipboardSubsystemFreeFn freeRemoteFileSubsystem;
 
 	wClipboardDelegate delegate;
 

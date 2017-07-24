@@ -46,6 +46,12 @@
 #include "../log.h"
 #define TAG WINPR_TAG("clipboard.posix")
 
+struct posix_subsystem_context
+{
+	wArrayList* localFiles;
+	UINT32 fileListSequenceNumber;
+};
+
 struct posix_file
 {
 	char* local_name;
@@ -574,6 +580,7 @@ error:
 static void* convert_uri_list_to_filedescriptors(wClipboard* clipboard, UINT32 formatId,
 		const void* data, UINT32* pSize)
 {
+	struct posix_subsystem_context* subsystem = clipboard->localFileSubsystem;
 	FILEDESCRIPTOR* descriptors = NULL;
 
 	if (!clipboard || !data || !pSize)
@@ -582,16 +589,16 @@ static void* convert_uri_list_to_filedescriptors(wClipboard* clipboard, UINT32 f
 	if (formatId != ClipboardGetFormatId(clipboard, "text/uri-list"))
 		return NULL;
 
-	if (!process_uri_list((const char*) data, *pSize, clipboard->localFiles))
+	if (!process_uri_list((const char*) data, *pSize, subsystem->localFiles))
 		return NULL;
 
-	descriptors = convert_local_file_list_to_filedescriptors(clipboard->localFiles);
+	descriptors = convert_local_file_list_to_filedescriptors(subsystem->localFiles);
 	if (!descriptors)
 		return NULL;
 
-	*pSize = ArrayList_Count(clipboard->localFiles) * sizeof(FILEDESCRIPTOR);
+	*pSize = ArrayList_Count(subsystem->localFiles) * sizeof(FILEDESCRIPTOR);
 
-	clipboard->fileListSequenceNumber = clipboard->sequenceNumber;
+	subsystem->fileListSequenceNumber = clipboard->sequenceNumber;
 
 	return descriptors;
 }
@@ -604,26 +611,14 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 	file_group_format_id = ClipboardRegisterFormat(clipboard, "FileGroupDescriptorW");
 	local_file_format_id = ClipboardRegisterFormat(clipboard, "text/uri-list");
 	if (!file_group_format_id || !local_file_format_id)
-		goto error;
-
-	clipboard->localFiles = ArrayList_New(FALSE);
-	if (!clipboard->localFiles)
-		goto error;
-
-	ArrayList_Object(clipboard->localFiles)->fnObjectFree = free_posix_file;
+		return FALSE;
 
 	if (!ClipboardRegisterSynthesizer(clipboard,
 			local_file_format_id, file_group_format_id,
 			convert_uri_list_to_filedescriptors))
-		goto error_free_local_files;
+		return FALSE;
 
 	return TRUE;
-
-error_free_local_files:
-	ArrayList_Free(clipboard->localFiles);
-	clipboard->localFiles = NULL;
-error:
-	return FALSE;
 }
 
 static UINT posix_file_get_size(const struct posix_file* file, off_t* size)
@@ -648,14 +643,22 @@ static UINT posix_file_request_size(wClipboardDelegate* delegate,
 	UINT error = NO_ERROR;
 	off_t size = 0;
 	struct posix_file* file = NULL;
+	struct posix_subsystem_context* subsystem = NULL;
+	wClipboard* clipboard = NULL;
 
-	if (!delegate || !delegate->clipboard || !request)
+	if (!delegate || !request)
 		return ERROR_BAD_ARGUMENTS;
 
-	if (delegate->clipboard->sequenceNumber != delegate->clipboard->fileListSequenceNumber)
+	if (!delegate->clipboard || !delegate->clipboard->localFileSubsystem)
+		return ERROR_BAD_ARGUMENTS;
+
+	clipboard = delegate->clipboard;
+	subsystem = clipboard->localFileSubsystem;
+
+	if (clipboard->sequenceNumber != subsystem->fileListSequenceNumber)
 		return ERROR_INVALID_STATE;
 
-	file = ArrayList_GetItem(delegate->clipboard->localFiles, request->listIndex);
+	file = ArrayList_GetItem(subsystem->localFiles, request->listIndex);
 	if (!file)
 		return ERROR_INDEX_ABSENT;
 
@@ -817,14 +820,22 @@ static UINT posix_file_request_range(wClipboardDelegate* delegate,
 	UINT32 size = 0;
 	UINT64 offset = 0;
 	struct posix_file* file = NULL;
+	struct posix_subsystem_context* subsystem = NULL;
+	wClipboard* clipboard = NULL;
 
-	if (!delegate || !delegate->clipboard || !request)
+	if (!delegate || !request)
 		return ERROR_BAD_ARGUMENTS;
 
-	if (delegate->clipboard->sequenceNumber != delegate->clipboard->fileListSequenceNumber)
+	if (!delegate->clipboard || !delegate->clipboard->localFileSubsystem)
+		return ERROR_BAD_ARGUMENTS;
+
+	clipboard = delegate->clipboard;
+	subsystem = clipboard->localFileSubsystem;
+
+	if (clipboard->sequenceNumber != subsystem->fileListSequenceNumber)
 		return ERROR_INVALID_STATE;
 
-	file = ArrayList_GetItem(delegate->clipboard->localFiles, request->listIndex);
+	file = ArrayList_GetItem(subsystem->localFiles, request->listIndex);
 	if (!file)
 		return ERROR_INDEX_ABSENT;
 
@@ -875,6 +886,39 @@ static void setup_delegate(wClipboardDelegate* delegate)
 	delegate->ClipboardFileRangeFailure = dummy_file_range_failure;
 }
 
+static struct posix_subsystem_context* make_subsystem_context(void)
+{
+	struct posix_subsystem_context* subsystem = NULL;
+
+	subsystem = calloc(1, sizeof(*subsystem));
+	if (!subsystem)
+		return NULL;
+
+	subsystem->localFiles = ArrayList_New(FALSE);
+	if (!subsystem->localFiles)
+		goto error_free_subsystem;
+
+	ArrayList_Object(subsystem->localFiles)->fnObjectFree = free_posix_file;
+
+	return subsystem;
+
+error_free_subsystem:
+	free(subsystem);
+	return NULL;
+}
+
+static void free_subsystem_context(void* context)
+{
+	struct posix_subsystem_context* subsystem = context;
+
+	if (subsystem)
+	{
+		ArrayList_Free(subsystem->localFiles);
+
+		free(subsystem);
+	}
+}
+
 BOOL ClipboardInitPosixFileSubsystem(wClipboard* clipboard)
 {
 	if (!clipboard)
@@ -882,6 +926,12 @@ BOOL ClipboardInitPosixFileSubsystem(wClipboard* clipboard)
 
 	if (!register_file_formats_and_synthesizers(clipboard))
 		return FALSE;
+
+	clipboard->localFileSubsystem = make_subsystem_context();
+	if (!clipboard->localFileSubsystem)
+		return FALSE;
+
+	clipboard->freeLocalFileSubsystem = free_subsystem_context;
 
 	setup_delegate(&clipboard->delegate);
 
