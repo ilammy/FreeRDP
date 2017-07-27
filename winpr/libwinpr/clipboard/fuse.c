@@ -17,6 +17,8 @@
  * limitations under the License.
  */
 
+#define FUSE_USE_VERSION 26
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -32,7 +34,10 @@
 
 #include <winpr/clipboard.h>
 #include <winpr/string.h>
+#include <winpr/thread.h>
 #include <winpr/wlog.h>
+
+#include <fuse/fuse.h>
 
 #include "clipboard.h"
 #include "fuse.h"
@@ -43,7 +48,75 @@
 struct fuse_subsystem_context
 {
 	char* mount_point;
+	struct fuse_chan* fuse_channel;
+	struct fuse* fuse;
+	HANDLE fuse_thread;
 };
+
+static const struct fuse_operations fuse_subsystem_ops = {
+};
+
+static DWORD fuse_thread(LPVOID lpThreadParameter)
+{
+	int ret = 0;
+	struct fuse_subsystem_context* subsystem = lpThreadParameter;
+
+	ret = fuse_loop(subsystem->fuse);
+
+	WLog_DBG(TAG, "fuse_loop() exited with %d", ret);
+
+	return NO_ERROR;
+}
+
+static void stop_fuse_thread(struct fuse_subsystem_context* subsystem)
+{
+	fuse_exit(subsystem->fuse);
+
+	WaitForSingleObject(subsystem->fuse_thread, INFINITE);
+	CloseHandle(subsystem->fuse_thread);
+
+	subsystem->fuse_thread = 0;
+}
+
+static BOOL init_fuse(struct fuse_subsystem_context* subsystem)
+{
+	subsystem->fuse_channel = fuse_mount(subsystem->mount_point, NULL);
+	if (!subsystem->fuse_channel)
+		return FALSE;
+
+	subsystem->fuse = fuse_new(subsystem->fuse_channel, NULL,
+		&fuse_subsystem_ops, sizeof(fuse_subsystem_ops),
+		subsystem);
+	if (!subsystem->fuse)
+		goto error_unmount_channel;
+
+	subsystem->fuse_thread = CreateThread(NULL, 0, fuse_thread, subsystem,
+		0, NULL);
+	if (!subsystem->fuse_thread)
+		goto error_destroy_fuse;
+
+	return TRUE;
+
+error_destroy_fuse:
+	fuse_destroy(subsystem->fuse);
+	subsystem->fuse = NULL;
+error_unmount_channel:
+	fuse_unmount(subsystem->mount_point, subsystem->fuse_channel);
+	subsystem->fuse_channel = NULL;
+
+	return FALSE;
+}
+
+static void free_fuse(struct fuse_subsystem_context* subsystem)
+{
+	stop_fuse_thread(subsystem);
+
+	fuse_unmount(subsystem->mount_point, subsystem->fuse_channel);
+	fuse_destroy(subsystem->fuse);
+
+	subsystem->fuse_channel = NULL;
+	subsystem->fuse = NULL;
+}
 
 static BOOL ensure_directory(const char* path)
 {
@@ -157,8 +230,13 @@ static struct fuse_subsystem_context* make_subsystem_context(void)
 	if (!ensure_mount_point(subsystem))
 		goto error_free_subsystem;
 
+	if (!init_fuse(subsystem))
+		goto error_remove_mount_point;
+
 	return subsystem;
 
+error_remove_mount_point:
+	remove_mount_point(subsystem);
 error_free_subsystem:
 	free(subsystem);
 
@@ -171,6 +249,7 @@ static void free_subsystem_context(void* context)
 
 	if (subsystem)
 	{
+		free_fuse(subsystem);
 		remove_mount_point(subsystem);
 
 		free(subsystem);
