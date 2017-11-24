@@ -391,6 +391,78 @@ error:
 	return NULL;
 }
 
+static int compare_files_by_name(const void* the_lhs, const void* the_rhs)
+{
+	const struct fuse_file* lhs = *((const struct fuse_file**) the_lhs);
+	const struct fuse_file* rhs = *((const struct fuse_file**) the_rhs);
+
+	return strcmp(lhs->local_name, rhs->local_name);
+}
+
+static void sort_fuse_files_by_name(struct fuse_file** files, UINT32 count)
+{
+	qsort(files, count, sizeof(*files), compare_files_by_name);
+}
+
+static BOOL contains(size_t len, const char* directory, const char* file)
+{
+	/* strncmp() first, so that we're sure that strlen(file) >= len */
+	return (strncmp(directory, file, len) == 0) && (file[len] == '/');
+}
+
+static UINT32 push_files_rec(struct fuse_file** all_files, UINT32 index, UINT32 count,
+		wArrayList* directory, UINT32 level, BOOL* success)
+{
+	UINT32 i;
+	size_t prefix_length = 0;
+
+	WLog_VRB(TAG, "push_files: [%u.%u] (%c) %s", level, index,
+		all_files[index]->is_directory ? 'd' : '-',
+		all_files[index]->local_name);
+
+	if (ArrayList_Add(directory, all_files[index]) < 0)
+		*success = FALSE;
+
+	if (!all_files[index]->is_directory)
+		return index + 1;
+
+	prefix_length = strlen(all_files[index]->local_name);
+
+	for (i = index + 1; i < count;)
+	{
+		if (!contains(prefix_length, all_files[index]->local_name, all_files[i]->local_name))
+			break;
+
+		i = push_files_rec(all_files, i, count, all_files[index]->contents, level + 1, success);
+	}
+
+	WLog_VRB(TAG, "push_files: [%u.%u] done", level, i);
+
+	return i;
+}
+
+static BOOL push_files(struct fuse_file** all_files, UINT32 count, wArrayList* remote_files)
+{
+	UINT32 i;
+	BOOL success = TRUE;
+
+	ArrayList_Clear(remote_files);
+
+	WLog_VRB(TAG, "push_files: will process %d files", count);
+
+	for (i = 0; i < count;)
+	{
+		i = push_files_rec(all_files, i, count, remote_files, 0, &success);
+	}
+
+	WLog_VRB(TAG, "push_files: done");
+
+	if (!success)
+		WLog_ERR(TAG, "failed to process all files");
+
+	return success;
+}
+
 static BOOL process_filedescriptors(const FILEDESCRIPTOR* descriptors, UINT32 count,
 		wArrayList* remote_files)
 {
@@ -400,6 +472,23 @@ static BOOL process_filedescriptors(const FILEDESCRIPTOR* descriptors, UINT32 co
 	if (!all_files)
 		return FALSE;
 
+	/*
+	 * We need to convert a flat list of files with relative names back
+	 * into hierachical directory structure. First we sort the files to
+	 * get them into topological order. Fortunately, lexical sort is
+	 * also a topological one for file names. After that we carefully
+	 * restore the directory structure by tracking file name prefixes.
+	 */
+
+	sort_fuse_files_by_name(all_files, count);
+
+	if (!push_files(all_files, count, remote_files))
+		goto error;
+
+	free(all_files);
+	return TRUE;
+
+error:
 	ArrayList_Clear(remote_files);
 	free(all_files);
 	return FALSE;
