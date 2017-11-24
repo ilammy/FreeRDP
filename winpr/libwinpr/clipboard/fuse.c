@@ -57,6 +57,11 @@ struct fuse_subsystem_context
 
 struct fuse_file
 {
+	char* local_name;
+	UINT32 index;
+
+	BOOL is_directory;
+	wArrayList* contents;
 };
 
 static void free_fuse_file(void* the_file)
@@ -66,7 +71,44 @@ static void free_fuse_file(void* the_file)
 	if (!file)
 		return;
 
+	ArrayList_Free(file->contents);
+	free(file->local_name);
+
 	free(file);
+}
+
+static struct fuse_file* make_fuse_file(char* local_name, UINT32 index, BOOL is_directory)
+{
+	struct fuse_file* file = NULL;
+
+	file = calloc(1, sizeof(*file));
+	if (!file)
+	{
+		free(local_name);
+		return NULL;
+	}
+
+	file->local_name = local_name;
+	file->index = index;
+
+	if (is_directory)
+	{
+		file->is_directory = TRUE;
+		file->contents = ArrayList_New(FALSE);
+
+		if (!file->contents)
+			goto error;
+
+		ArrayList_Object(file->contents)->fnObjectFree = free_fuse_file;
+	}
+
+	return file;
+
+error:
+	free(file->local_name);
+	free(file);
+
+	return NULL;
 }
 
 static const struct fuse_operations fuse_subsystem_ops = {
@@ -281,9 +323,85 @@ static void free_subsystem_context(void* context)
 	}
 }
 
+static char* remote_to_local_filename(const WCHAR* remote_filename)
+{
+	char* c;
+	char* local_filename = NULL;
+
+	if (!ConvertFromUnicode(CP_UTF8, 0, remote_filename, -1, &local_filename, 0, NULL, FALSE)) {
+		WLog_WARN(TAG, "Unicode conversion failed");
+		return NULL;
+	}
+
+	for (c = local_filename; *c; c++)
+		if (*c == '\\')
+			*c = '/';
+
+	return local_filename;
+}
+
+static struct fuse_file* convert_filedescriptor_to_fuse_file(const FILEDESCRIPTOR *descriptor,
+		UINT32 index)
+{
+	char* local_filename = NULL;
+	struct fuse_file* file = NULL;
+
+	local_filename = remote_to_local_filename(descriptor->cFileName);
+	if (!local_filename)
+		return NULL;
+
+	file = make_fuse_file(local_filename, index,
+		descriptor->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
+
+	/*
+	 * We ignore other file attributes. Modification time makes little
+	 * sense for files pasted from remote machine at the current moment.
+	 * File size is not set most of the time in FILEDESCRIPTOR structs
+	 * so we will explicitly request it later.
+	 */
+
+	return file;
+}
+
+static struct fuse_file** convert_filedescriptors_to_fuse_files(
+		const FILEDESCRIPTOR* descriptors, UINT32 count)
+{
+	UINT32 i;
+	struct fuse_file** files = NULL;
+
+	files = calloc(count, sizeof(*files));
+	if (!files)
+		return FALSE;
+
+	for (i = 0; i < count; i++)
+	{
+		files[i] = convert_filedescriptor_to_fuse_file(&descriptors[i], i);
+		if (!files[i])
+			goto error;
+	}
+
+	return files;
+
+error:
+	for (i = 0; i < count; i++)
+		free_fuse_file(files[i]);
+
+	free(files);
+
+	return NULL;
+}
+
 static BOOL process_filedescriptors(const FILEDESCRIPTOR* descriptors, UINT32 count,
 		wArrayList* remote_files)
 {
+	struct fuse_file** all_files = NULL;
+
+	all_files = convert_filedescriptors_to_fuse_files(descriptors, count);
+	if (!all_files)
+		return FALSE;
+
+	ArrayList_Clear(remote_files);
+	free(all_files);
 	return FALSE;
 }
 
