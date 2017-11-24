@@ -33,6 +33,7 @@
 #include <sys/types.h>
 
 #include <winpr/clipboard.h>
+#include <winpr/shell.h>
 #include <winpr/string.h>
 #include <winpr/thread.h>
 #include <winpr/wlog.h>
@@ -51,7 +52,22 @@ struct fuse_subsystem_context
 	struct fuse_chan* fuse_channel;
 	struct fuse* fuse;
 	HANDLE fuse_thread;
+	wArrayList* remote_files;
 };
+
+struct fuse_file
+{
+};
+
+static void free_fuse_file(void* the_file)
+{
+	struct fuse_file* file = the_file;
+
+	if (!file)
+		return;
+
+	free(file);
+}
 
 static const struct fuse_operations fuse_subsystem_ops = {
 };
@@ -233,8 +249,16 @@ static struct fuse_subsystem_context* make_subsystem_context(void)
 	if (!init_fuse(subsystem))
 		goto error_remove_mount_point;
 
+	subsystem->remote_files = ArrayList_New(FALSE);
+	if (!subsystem->remote_files)
+		goto error_free_fuse;
+
+	ArrayList_Object(subsystem->remote_files)->fnObjectFree = free_fuse_file;
+
 	return subsystem;
 
+error_free_fuse:
+	free_fuse(subsystem);
 error_remove_mount_point:
 	remove_mount_point(subsystem);
 error_free_subsystem:
@@ -251,14 +275,74 @@ static void free_subsystem_context(void* context)
 	{
 		free_fuse(subsystem);
 		remove_mount_point(subsystem);
+		ArrayList_Free(subsystem->remote_files);
 
 		free(subsystem);
 	}
 }
 
+static BOOL process_filedescriptors(const FILEDESCRIPTOR* descriptors, UINT32 count,
+		wArrayList* remote_files)
+{
+	return FALSE;
+}
+
+static char* convert_remote_file_list_to_uri_list(wArrayList* remote_files, UINT32* length)
+{
+	*length = 0;
+	return NULL;
+}
+
+static void* convert_filedescriptors_to_uri_list(wClipboard* clipboard, UINT32 formatId,
+		const void* data, UINT32* pSize)
+{
+	struct fuse_subsystem_context* context = clipboard->remoteFileSubsystem;
+	char* uri_list = NULL;
+
+	if (!clipboard || !data || !pSize)
+		return NULL;
+
+	if (formatId != ClipboardGetFormatId(clipboard, "FileGroupDescriptorW"))
+		return NULL;
+
+	if (*pSize % sizeof(FILEDESCRIPTOR) != 0)
+		return NULL;
+
+	if (!process_filedescriptors((const FILEDESCRIPTOR*) data, *pSize / sizeof(FILEDESCRIPTOR),
+			context->remote_files))
+		return NULL;
+
+	uri_list = convert_remote_file_list_to_uri_list(context->remote_files, pSize);
+	if (!uri_list)
+		return NULL;
+
+	return uri_list;
+}
+
+static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
+{
+	UINT32 file_group_format_id;
+	UINT32 local_file_format_id;
+
+	file_group_format_id = ClipboardRegisterFormat(clipboard, "FileGroupDescriptorW");
+	local_file_format_id = ClipboardRegisterFormat(clipboard, "text/uri-list");
+	if (!file_group_format_id || !local_file_format_id)
+		return FALSE;
+
+	if (!ClipboardRegisterSynthesizer(clipboard,
+			file_group_format_id, local_file_format_id,
+			convert_filedescriptors_to_uri_list))
+		return FALSE;
+
+	return TRUE;
+}
+
 BOOL ClipboardInitFuseFileSubsystem(wClipboard* clipboard)
 {
 	if (!clipboard)
+		return FALSE;
+
+	if (!register_file_formats_and_synthesizers(clipboard))
 		return FALSE;
 
 	clipboard->remoteFileSubsystem = make_subsystem_context();
