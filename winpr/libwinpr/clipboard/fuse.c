@@ -494,8 +494,132 @@ error:
 	return FALSE;
 }
 
-static char* convert_remote_file_list_to_uri_list(wArrayList* remote_files, UINT32* length)
+static BOOL Stream_Append(wStream* s, const char* str)
 {
+	size_t length = strlen(str);
+
+	if (!Stream_EnsureRemainingCapacity(s, length))
+		return FALSE;
+
+	Stream_Write(s, str, length);
+
+	return TRUE;
+}
+
+static BOOL should_percent_encode(BYTE c)
+{
+	/*
+	 * See RFC 3986 on what should be encoded. We should leave unreserved
+	 * characters as is and do not escape the slashes because they really
+	 * delimit URL paths. Everything else must be percent-encoded.
+	 */
+	if (('A' <= c) && (c <= 'Z'))
+		return FALSE;
+	if (('a' <= c) && (c <= 'z'))
+		return FALSE;
+	if (('0' <= c) && (c <= '9'))
+		return FALSE;
+	if ((c == '-') || (c == '_') || (c == '.') || (c == '~') || (c == '/'))
+		return FALSE;
+
+	return TRUE;
+}
+
+static BYTE as_hex(BYTE n)
+{
+	static const char* nibbles = "0123456789ABCDEF";
+
+	return (n < 16) ? nibbles[n] : 'X';
+}
+
+static BOOL Stream_Append_PercentEncoded(wStream* s, const char* str)
+{
+	const char *c;
+	size_t length = strlen(str);
+
+	/* Percent-encoding inflates number of characters maximum by three. */
+	if (!Stream_EnsureRemainingCapacity(s, 3 * length))
+		return FALSE;
+
+	for (c = str; *c; c++) {
+		BYTE b = *c;
+		if (should_percent_encode(b)) {
+			Stream_Write_UINT8(s, '%');
+			Stream_Write_UINT8(s, as_hex((b >> 4) & 0x0F));
+			Stream_Write_UINT8(s, as_hex((b >> 0) & 0x0F));
+		} else {
+			Stream_Write_UINT8(s, b);
+		}
+	}
+
+	return TRUE;
+}
+
+static BOOL append_file_to_uri_list(const char* mount_point, struct fuse_file* file, wStream* s)
+{
+	if (!Stream_Append(s, "file://"))
+		return FALSE;
+
+	if (!Stream_Append_PercentEncoded(s, mount_point))
+		return FALSE;
+
+	if (!Stream_Append(s, "/"))
+		return FALSE;
+
+	if (!Stream_Append_PercentEncoded(s, file->local_name))
+		return FALSE;
+
+	if (!Stream_Append(s, "\n"))
+		return FALSE;
+
+	return TRUE;
+}
+
+static BOOL do_convert_remote_file_list_to_uri_list(const char* mount_point,
+		wArrayList* remote_files, wStream* s)
+{
+	int i;
+	int count;
+
+	count = ArrayList_Count(remote_files);
+
+	for (i = 0; i < count; i++)
+	{
+		struct fuse_file* file = ArrayList_GetItem(remote_files, i);
+
+		if (!append_file_to_uri_list(mount_point, file, s))
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+static char* convert_remote_file_list_to_uri_list(const char* mount_point,
+		wArrayList* remote_files, UINT32* length)
+{
+	wStream* s;
+	char* buffer;
+
+	/* TODO: tweak the initial size after measurements */
+	s = Stream_New(NULL, 4096);
+	if (!s)
+		goto error;
+
+	if (!do_convert_remote_file_list_to_uri_list(mount_point, remote_files, s))
+		goto error_free_stream;
+
+	Stream_SealLength(s);
+
+	buffer = (char*) Stream_Buffer(s);
+	*length = (UINT32) Stream_Length(s);
+
+	Stream_Free(s, FALSE);
+
+	return buffer;
+
+error_free_stream:
+	Stream_Free(s, TRUE);
+error:
 	*length = 0;
 	return NULL;
 }
@@ -519,7 +643,8 @@ static void* convert_filedescriptors_to_uri_list(wClipboard* clipboard, UINT32 f
 			context->remote_files))
 		return NULL;
 
-	uri_list = convert_remote_file_list_to_uri_list(context->remote_files, pSize);
+	uri_list = convert_remote_file_list_to_uri_list(context->mount_point,
+			context->remote_files, pSize);
 	if (!uri_list)
 		return NULL;
 
