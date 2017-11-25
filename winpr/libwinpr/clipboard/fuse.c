@@ -111,7 +111,120 @@ error:
 	return NULL;
 }
 
+static size_t next_path_component(const char* path)
+{
+	return strcspn(path, "/");
+}
+
+static struct fuse_file* lookup_child_file(const char* name, wArrayList* children,
+		size_t name_len, size_t prefix_len)
+{
+	int i;
+	int count = ArrayList_Count(children);
+
+	WLog_VRB(TAG, "lookup_child_file: looking for \"%s\"", name);
+
+	for (i = 0; i < count; i++)
+	{
+		struct fuse_file* child = ArrayList_GetItem(children, i);
+		const char *child_name = child->local_name + prefix_len;
+		size_t child_name_len = next_path_component(child_name);
+
+		WLog_VRB(TAG, "lookup_child_file: child_name=\"%s\"", child_name);
+
+		if ((name_len == child_name_len) && (!strncmp(name, child_name, name_len)))
+		{
+			return child;
+		}
+	}
+
+	WLog_VRB(TAG, "lookup_child_file: not found: \"%s\"", name);
+
+	return NULL;
+}
+
+static int lookup_fuse_file(struct fuse_file* root, const char* name,
+		struct fuse_file** file_out)
+{
+	struct fuse_file* file = root;
+
+	/*
+	 * FUSE filenames are always 'absolute' (start with a slash)
+	 * relative to the filesystem mount point. Skip that slash.
+	 */
+	if (*name != '/')
+	{
+		WLog_WARN(TAG, "expected absolute FUSE filename: \"%s\"", name);
+		return -EINVAL;
+	}
+	name++;
+
+	while (*name)
+	{
+		size_t file_name_len = next_path_component(name);
+		size_t dir_name_len = strlen(file->local_name);
+
+		if (!file->is_directory)
+		{
+			WLog_VRB(TAG, "lookup_fuse_file: expected a directory: \"%s\"",
+				file->local_name);
+			return -ENOTDIR;
+		}
+
+		/*
+		 * Include slash into the directory name length.
+		 * Root directory is an exception as it has empty path.
+		 */
+		if (dir_name_len > 0)
+			dir_name_len++;
+
+		file = lookup_child_file(name, file->contents,
+			file_name_len, dir_name_len);
+
+		WLog_VRB(TAG, "lookup_fuse_file: name=\"%s\" next=\"%s\"",
+			 name, file ? file->local_name : NULL);
+
+		if (!file)
+			return -ENOENT;
+
+		/*
+		 * Skip to the next path component, over the slash.
+		 */
+		name += file_name_len;
+		if (*name == '/')
+			name++;
+	}
+
+	if (file_out)
+		*file_out = file;
+
+	return 0;
+}
+
+static int fuse_getattr(const char* name, struct stat* statbuf)
+{
+	static const mode_t kFileMode = 0644 | S_IFREG;
+	static const mode_t kDirMode = 0755 | S_IFDIR;
+
+	int err;
+	struct fuse_file *file;
+	struct fuse_subsystem_context* subsystem = fuse_get_context()->private_data;
+
+	WLog_VRB(TAG, "fuse_getattr: \"%s\"", name);
+
+	err = lookup_fuse_file(subsystem->root_directory, name, &file);
+	if (err)
+		return err;
+
+	statbuf->st_ino = file->index;
+	statbuf->st_mode = file->is_directory ? kDirMode : kFileMode;
+	statbuf->st_size = 0; /* TODO: fill in the size if known */
+
+	return 0;
+}
+
 static const struct fuse_operations fuse_subsystem_ops = {
+	.getattr = fuse_getattr,
 };
 
 static DWORD fuse_thread(LPVOID lpThreadParameter)
