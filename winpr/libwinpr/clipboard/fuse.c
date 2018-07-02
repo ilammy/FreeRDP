@@ -46,15 +46,6 @@
 #include "../log.h"
 #define TAG WINPR_TAG("clipboard.fuse")
 
-struct fuse_subsystem_context
-{
-	char* mount_point;
-	struct fuse_chan* fuse_channel;
-	struct fuse* fuse;
-	HANDLE fuse_thread;
-	wArrayList* remote_files;
-};
-
 struct fuse_file
 {
 	char* local_name;
@@ -62,6 +53,15 @@ struct fuse_file
 
 	BOOL is_directory;
 	wArrayList* contents;
+};
+
+struct fuse_subsystem_context
+{
+	char* mount_point;
+	struct fuse_chan* fuse_channel;
+	struct fuse* fuse;
+	HANDLE fuse_thread;
+	struct fuse_file *root_directory;
 };
 
 static void free_fuse_file(void* the_file)
@@ -291,11 +291,10 @@ static struct fuse_subsystem_context* make_subsystem_context(void)
 	if (!init_fuse(subsystem))
 		goto error_remove_mount_point;
 
-	subsystem->remote_files = ArrayList_New(FALSE);
-	if (!subsystem->remote_files)
-		goto error_free_fuse;
+	subsystem->root_directory = make_fuse_file(_strdup(""), -1, TRUE);
 
-	ArrayList_Object(subsystem->remote_files)->fnObjectFree = free_fuse_file;
+	if (!subsystem->root_directory)
+		goto error_free_fuse;
 
 	return subsystem;
 
@@ -317,7 +316,7 @@ static void free_subsystem_context(void* context)
 	{
 		free_fuse(subsystem);
 		remove_mount_point(subsystem);
-		ArrayList_Free(subsystem->remote_files);
+		free_fuse_file(subsystem->root_directory);
 
 		free(subsystem);
 	}
@@ -653,11 +652,11 @@ static void* convert_filedescriptors_to_uri_list(wClipboard* clipboard, UINT32 f
 		return NULL;
 
 	if (!process_filedescriptors((const FILEDESCRIPTOR*) data, *pSize / sizeof(FILEDESCRIPTOR),
-			context->remote_files))
+			context->root_directory->contents))
 		return NULL;
 
 	uri_list = convert_remote_file_list_to_uri_list(context->mount_point,
-			context->remote_files, pSize);
+			context->root_directory->contents, pSize);
 	if (!uri_list)
 		return NULL;
 
