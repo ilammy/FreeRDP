@@ -201,6 +201,38 @@ static int lookup_fuse_file(struct fuse_file* root, const char* name,
 	return 0;
 }
 
+static int lookup_fuse_file_cached(struct fuse_file* root, const char* name,
+		struct fuse_file_info* info, struct fuse_file** file_out,
+		BOOL require_directory)
+{
+	int err;
+	struct fuse_file* file;
+
+	if (info && info->fh)
+	{
+		if (file_out)
+			*file_out = (struct fuse_file*) info->fh;
+		return 0;
+	}
+
+	err = lookup_fuse_file(root, name, &file);
+	if (err)
+		return err;
+
+	if (require_directory && !file->is_directory)
+	{
+		WLog_VRB(TAG, "lookup_fuse_file_cached: not a directory: \"%s\"", name);
+		return -ENOTDIR;
+	}
+
+	if (info)
+		info->fh = (uint64_t) file;
+	if (file_out)
+		*file_out = file;
+
+	return 0;
+}
+
 static int fuse_getattr(const char* name, struct stat* statbuf)
 {
 	static const mode_t kFileMode = 0644 | S_IFREG;
@@ -223,8 +255,71 @@ static int fuse_getattr(const char* name, struct stat* statbuf)
 	return 0;
 }
 
+static int fuse_opendir(const char* name, struct fuse_file_info* info)
+{
+	struct fuse_subsystem_context* subsystem = fuse_get_context()->private_data;
+
+	WLog_VRB(TAG, "fuse_opendir: \"%s\"", name);
+
+	return lookup_fuse_file_cached(subsystem->root_directory, name, info,
+		NULL, TRUE);
+}
+
+static int fill_readdir_buffer(struct fuse_file* dir, void* buffer, fuse_fill_dir_t fdt)
+{
+	int i;
+	int count = ArrayList_Count(dir->contents);
+	size_t dir_name_len = strlen(dir->local_name);
+
+	for (i = 0; i < count; i++)
+	{
+		struct fuse_file* file = ArrayList_GetItem(dir->contents, i);
+		const char* file_name = file->local_name + dir_name_len + 1;
+
+		WLog_VRB(TAG, "fill_readdir_buffer: %s > %s", dir->local_name, file_name);
+
+		/*
+		 * TODO: fill statbuf to avoid lookups
+		 */
+
+		if (fdt(buffer, file_name, NULL, 0))
+			return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static int fuse_readdir(const char* name, void* buffer, fuse_fill_dir_t fdt,
+		off_t offset, struct fuse_file_info* info)
+{
+	int err;
+	struct fuse_file* dir;
+	struct fuse_subsystem_context* subsystem = fuse_get_context()->private_data;
+
+	WLog_VRB(TAG, "fuse_readdir: \"%s\"", name);
+
+	err = lookup_fuse_file_cached(subsystem->root_directory, name, info,
+		&dir, TRUE);
+	if (err)
+		return err;
+
+	return fill_readdir_buffer(dir, buffer, fdt);
+}
+
+static int fuse_releasedir(const char* name, struct fuse_file_info* info)
+{
+	WLog_VRB(TAG, "fuse_releasedir: \"%s\"", name);
+
+	info->fh = 0;
+
+	return 0;
+}
+
 static const struct fuse_operations fuse_subsystem_ops = {
 	.getattr = fuse_getattr,
+	.opendir = fuse_opendir,
+	.readdir = fuse_readdir,
+	.releasedir = fuse_releasedir,
 };
 
 static DWORD fuse_thread(LPVOID lpThreadParameter)
