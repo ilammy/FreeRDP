@@ -338,6 +338,18 @@ static void stop_fuse_thread(struct fuse_subsystem_context* subsystem)
 {
 	fuse_exit(subsystem->fuse);
 
+	/*
+	 * This is a hack. fuse_loop() blocks for indefinite amount of time
+	 * until some FUSE event arrives for the filesystem, which will never
+	 * happen as we're shutting down and do not provide clipboard anymore.
+	 *
+	 * fuse_exit() does *not* interrupt fuse_loop() immediately, only
+	 * after it's unblocked. Thus we have to disgracefully kill the thread
+	 * to make it stop. This could be handled better with signals (which
+	 * can interrupt system calls), but that's hard to do cleanly.
+	 */
+	TerminateThread(subsystem->fuse_thread, 0);
+
 	WaitForSingleObject(subsystem->fuse_thread, INFINITE);
 	CloseHandle(subsystem->fuse_thread);
 
