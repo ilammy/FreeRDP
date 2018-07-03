@@ -445,6 +445,12 @@ static BOOL process_uri(const char* uri, size_t uri_len, wArrayList* files)
 
 	WLog_VRB(TAG, "processing URI: %.*s", uri_len, uri);
 
+	/*
+	 * x-special/gnome-copied-files start with these strings. Skip them.
+	 */
+	if ((strncmp(uri, "copy", uri_len) == 0) || (strncmp(uri, "cut", uri_len) == 0))
+		return TRUE;
+
 	if ((uri_len < strlen("file://")) || strncmp(uri, "file://", strlen("file://")))
 	{
 		WLog_ERR(TAG, "non-'file://' URI schemes are not supported");
@@ -586,7 +592,7 @@ static void* convert_uri_list_to_filedescriptors(wClipboard* clipboard, UINT32 f
 	if (!clipboard || !data || !pSize)
 		return NULL;
 
-	if (formatId != ClipboardGetFormatId(clipboard, "text/uri-list"))
+	if (formatId != ClipboardGetFormatId(clipboard, "x-special/gnome-copied-files"))
 		return NULL;
 
 	if (!process_uri_list((const char*) data, *pSize, subsystem->localFiles))
@@ -609,7 +615,7 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 	UINT32 local_file_format_id;
 
 	file_group_format_id = ClipboardRegisterFormat(clipboard, "FileGroupDescriptorW");
-	local_file_format_id = ClipboardRegisterFormat(clipboard, "text/uri-list");
+	local_file_format_id = ClipboardRegisterFormat(clipboard, "x-special/gnome-copied-files");
 	if (!file_group_format_id || !local_file_format_id)
 		return FALSE;
 

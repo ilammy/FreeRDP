@@ -581,6 +581,13 @@ static BOOL do_convert_remote_file_list_to_uri_list(const char* mount_point,
 	int i;
 	int count;
 
+	/*
+	 * We have no idea whether the files are copied or cut on the remote
+	 * side, so allow pasting them multiple times just in case.
+	 */
+	if (!Stream_Append(s, "copy\n"))
+		return FALSE;
+
 	count = ArrayList_Count(remote_files);
 
 	for (i = 0; i < count; i++)
@@ -590,6 +597,12 @@ static BOOL do_convert_remote_file_list_to_uri_list(const char* mount_point,
 		if (!append_file_to_uri_list(mount_point, file, s))
 			return FALSE;
 	}
+
+	/*
+	 * Trim the last newline. Some applications expect files to be
+	 * delimited by newlines and are offended by 'empty' file names.
+	 */
+	Stream_Rewind(s, 1);
 
 	return TRUE;
 }
@@ -657,7 +670,7 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 	UINT32 local_file_format_id;
 
 	file_group_format_id = ClipboardRegisterFormat(clipboard, "FileGroupDescriptorW");
-	local_file_format_id = ClipboardRegisterFormat(clipboard, "text/uri-list");
+	local_file_format_id = ClipboardRegisterFormat(clipboard, "x-special/gnome-copied-files");
 	if (!file_group_format_id || !local_file_format_id)
 		return FALSE;
 

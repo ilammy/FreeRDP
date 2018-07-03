@@ -598,7 +598,7 @@ static void xf_cliprdr_process_requested_data(xfClipboard* clipboard,
 			break;
 
 		case CB_FORMAT_TEXTURILIST:
-			srcFormatId = ClipboardGetFormatId(clipboard->system, "text/uri-list");
+			srcFormatId = ClipboardGetFormatId(clipboard->system, "x-special/gnome-copied-files");
 			break;
 	}
 
@@ -1390,7 +1390,7 @@ static UINT xf_cliprdr_server_format_data_response(CliprdrClientContext*
 			UINT32 file_count = 0;
 
 			srcFormatId = ClipboardGetFormatId(clipboard->system, "FileGroupDescriptorW");
-			dstFormatId = ClipboardGetFormatId(clipboard->system, "text/uri-list");
+			dstFormatId = ClipboardGetFormatId(clipboard->system, "x-special/gnome-copied-files");
 
 			/*
 			 * File lists require a bit of postprocessing to convert them from
@@ -1733,10 +1733,10 @@ xfClipboard* xf_clipboard_new(xfContext* xfc)
 	 * registration). However, they are definitely not supported if there are no registered
 	 * formats. In this case we should not list file formats in TARGETS.
 	 */
-	if (ClipboardGetFormatId(clipboard->system, "text/uri-list"))
+	if (ClipboardGetFormatId(clipboard->system, "x-special/gnome-copied-files"))
 	{
 		clipboard->file_formats_registered = TRUE;
-		clipboard->clientFormats[n].atom = XInternAtom(xfc->display, "text/uri-list", False);
+		clipboard->clientFormats[n].atom = XInternAtom(xfc->display, "x-special/gnome-copied-files", False);
 		clipboard->clientFormats[n].formatId = CB_FORMAT_TEXTURILIST;
 		clipboard->clientFormats[n].formatName = _strdup("FileGroupDescriptorW");
 		if (!clipboard->clientFormats[n].formatName)
