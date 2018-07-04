@@ -62,6 +62,12 @@ struct _wClipboardDelegate
 			const BYTE* data, UINT32 size);
 	UINT (*ClipboardFileRangeFailure)(wClipboardDelegate*, const wClipboardFileRangeRequest*,
 			UINT errorCode);
+
+	UINT (*ServerRequestFileSize)(wClipboardDelegate*, const wClipboardFileSizeRequest*);
+	UINT (*ServerFileSizeSuccess)(wClipboardDelegate*, const wClipboardFileSizeRequest*,
+			UINT64 fileSize);
+	UINT (*ServerFileSizeFailure)(wClipboardDelegate*, const wClipboardFileSizeRequest*,
+			UINT errorCode);
 };
 
 #ifdef __cplusplus
