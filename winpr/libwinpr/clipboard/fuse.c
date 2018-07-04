@@ -54,6 +54,9 @@ struct fuse_file
 
 	BOOL is_directory;
 	wArrayList* contents;
+
+	BOOL size_known;
+	UINT64 size;
 };
 
 #define FileContentEmpty 0
@@ -62,6 +65,8 @@ struct fuse_file
 
 struct fuse_subsystem_context
 {
+	wClipboard* clipboard;
+
 	char* mount_point;
 	struct fuse_chan* fuse_channel;
 	struct fuse* fuse;
@@ -244,6 +249,8 @@ static int lookup_fuse_file_cached(struct fuse_file* root, const char* name,
 	return 0;
 }
 
+static int request_file_size(struct fuse_subsystem_context* subsystem, struct fuse_file* file);
+
 static int fuse_getattr(const char* name, struct stat* statbuf)
 {
 	static const mode_t kFileMode = 0644 | S_IFREG;
@@ -259,9 +266,16 @@ static int fuse_getattr(const char* name, struct stat* statbuf)
 	if (err)
 		return err;
 
+	if (file->size_known)
+	{
+		err = request_file_size(subsystem, file);
+		if (err)
+			return err;
+	}
+
 	statbuf->st_ino = file->index;
 	statbuf->st_mode = file->is_directory ? kDirMode : kFileMode;
-	statbuf->st_size = 0; /* TODO: fill in the size if known */
+	statbuf->st_size = file->size;
 
 	return 0;
 }
@@ -434,6 +448,31 @@ static void wait_for_freed_content(struct fuse_subsystem_context* subsystem)
 
 static void free_content(struct fuse_subsystem_context* subsystem)
 {
+}
+
+static int request_file_size(struct fuse_subsystem_context* subsystem, struct fuse_file* file)
+{
+	wClipboardFileSizeRequest request;
+	wClipboardDelegate* delegate = &subsystem->clipboard->delegate;
+
+	request.streamId = 0;
+	request.listIndex = file->index;
+
+	delegate->ServerRequestFileSize(delegate, &request);
+
+	wait_for_ready_content(subsystem);
+
+	if (subsystem->file_content_size == sizeof(UINT64) && subsystem->file_content_bytes)
+	{
+		file->size = *((UINT64*) subsystem->file_content_bytes);
+		file->size_known = TRUE;
+	}
+	else
+	{
+		// complains
+	}
+
+	release_content(subsystem);
 }
 
 static UINT fuse_file_content_success(wClipboardDelegate* delegate, UINT32 streamId,
@@ -1005,7 +1044,7 @@ BOOL ClipboardInitFuseFileSubsystem(wClipboard* clipboard)
 
 	clipboard->freeRemoteFileSubsystem = free_subsystem_context;
 
-	setup_delegate(clipboard->delegate);
+	setup_delegate(&clipboard->delegate);
 
 	return TRUE;
 }
