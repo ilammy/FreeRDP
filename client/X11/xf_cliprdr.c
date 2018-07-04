@@ -1643,7 +1643,48 @@ static UINT xf_cliprdr_client_file_size_request(wClipboardDelegate* delegate,
 	request.cbRequested = sizeof(UINT64);
 	request.dwFlags = FILECONTENTS_SIZE;
 
+	if (xf_cliprdr_add_pending_size_request(clipboard, sizeRequest->streamId))
+		return -1; /* TODO: propper error */
+
 	return clipboard->context->ClientFileContentsRequest(clipboard->context, &request);
+}
+
+static UINT xf_cliprdr_server_file_size_response(xfClipboard* clipboard,
+		CLIPRDR_FILE_CONTENTS_RESPONSE* fileContentsResponse)
+{
+	wClipboardFileSizeRequest request;
+
+	request.streamId = fileContentsResponse->streamId;
+	request.listIndex = fileContentsResponse->
+
+	if (fileContentsResponse->msgFlags & CB_RESPONSE_FAIL)
+		clipboard->delegate->ServerFileSizeFailure(clipboard->delegate);
+}
+
+static UINT xf_cliprdr_server_file_data_response(xfClipboard* clipboard,
+		CLIPRDR_FILE_CONTENTS_RESPONSE* fileContentsResponse)
+{
+	return -1;
+}
+
+static UINT xf_cliprdr_server_file_contents_response(CliprdrClientContext* context,
+		CLIPRDR_FILE_CONTENTS_RESPONSE* fileContentsResponse)
+{
+	int res;
+	UINT error;
+	xfClipboard* clipboard = (xfClipboard*) context->custom;
+
+	res = xf_cliprdr_is_pending_size_request(clipboard, fileContentsResponse->streamId);
+	if (res < 0)
+		return CHANNEL_RC_OK;
+
+	if (res > 0)
+		error = xf_cliprdr_server_file_size_response(clipboard, fileContentsResponse);
+	else
+		error = xf_cliprdr_server_file_data_response(clipboard, fileContentsResponse);
+
+	return error;
+
 }
 
 xfClipboard* xf_clipboard_new(xfContext* xfc)
@@ -1829,6 +1870,7 @@ void xf_cliprdr_init(xfContext* xfc, CliprdrClientContext* cliprdr)
 	cliprdr->ServerFormatDataRequest = xf_cliprdr_server_format_data_request;
 	cliprdr->ServerFormatDataResponse = xf_cliprdr_server_format_data_response;
 	cliprdr->ServerFileContentsRequest = xf_cliprdr_server_file_contents_request;
+	cliprdr->ServerFileContentsResponse = xf_cliprdr_server_file_contents_response;
 }
 
 void xf_cliprdr_uninit(xfContext* xfc, CliprdrClientContext* cliprdr)
