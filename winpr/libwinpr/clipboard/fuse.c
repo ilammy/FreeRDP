@@ -35,6 +35,7 @@
 #include <winpr/clipboard.h>
 #include <winpr/shell.h>
 #include <winpr/string.h>
+#include <winpr/synch.h>
 #include <winpr/thread.h>
 #include <winpr/wlog.h>
 
@@ -62,6 +63,8 @@ struct fuse_subsystem_context
 	struct fuse* fuse;
 	HANDLE fuse_thread;
 	struct fuse_file *root_directory;
+
+	CRITICAL_SECTION file_content_lock;
 };
 
 static void free_fuse_file(void* the_file)
@@ -394,6 +397,21 @@ static void free_fuse(struct fuse_subsystem_context* subsystem)
 
 	subsystem->fuse_channel = NULL;
 	subsystem->fuse = NULL;
+}
+
+static UINT fuse_file_content_success(wClipboardDelegate* delegate, UINT32 streamId,
+		const BYTE* data, UINT32 size)
+{
+	struct posix_subsystem_context* subsystem = NULL;
+	wClipboard* clipboard = NULL;
+
+	clipboard = delegate->clipboard;
+	subsystem = clipboard->remoteFileSubsystem;
+}
+
+static UINT fuse_file_content_failure(wClipboardDelegate* delegate, UINT32 streamId)
+{
+
 }
 
 static BOOL ensure_directory(const char* path)
@@ -901,6 +919,12 @@ static BOOL register_file_formats_and_synthesizers(wClipboard* clipboard)
 	return TRUE;
 }
 
+static void setup_delegate(wClipboardDelegate* delegate)
+{
+	delegate->ClipboardFileContentSuccess = fuse_file_content_success;
+	delegate->ClipboardFileContentFailure = fuse_file_content_failure;
+}
+
 BOOL ClipboardInitFuseFileSubsystem(wClipboard* clipboard)
 {
 	if (!clipboard)
@@ -914,6 +938,8 @@ BOOL ClipboardInitFuseFileSubsystem(wClipboard* clipboard)
 		return FALSE;
 
 	clipboard->freeRemoteFileSubsystem = free_subsystem_context;
+
+	setup_delegate(clipboard->delegate);
 
 	return TRUE;
 }
