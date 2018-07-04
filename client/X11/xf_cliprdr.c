@@ -1649,24 +1649,6 @@ static UINT xf_cliprdr_client_file_size_request(wClipboardDelegate* delegate,
 	return clipboard->context->ClientFileContentsRequest(clipboard->context, &request);
 }
 
-static UINT xf_cliprdr_server_file_size_response(xfClipboard* clipboard,
-		CLIPRDR_FILE_CONTENTS_RESPONSE* fileContentsResponse)
-{
-	wClipboardFileSizeRequest request;
-
-	request.streamId = fileContentsResponse->streamId;
-	request.listIndex = fileContentsResponse->
-
-	if (fileContentsResponse->msgFlags & CB_RESPONSE_FAIL)
-		clipboard->delegate->ServerFileSizeFailure(clipboard->delegate);
-}
-
-static UINT xf_cliprdr_server_file_data_response(xfClipboard* clipboard,
-		CLIPRDR_FILE_CONTENTS_RESPONSE* fileContentsResponse)
-{
-	return -1;
-}
-
 static UINT xf_cliprdr_server_file_contents_response(CliprdrClientContext* context,
 		CLIPRDR_FILE_CONTENTS_RESPONSE* fileContentsResponse)
 {
