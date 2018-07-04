@@ -1630,6 +1630,22 @@ static UINT xf_cliprdr_clipboard_file_range_failure(wClipboardDelegate* delegate
 	return clipboard->context->ClientFileContentsResponse(clipboard->context, &response);
 }
 
+static UINT xf_cliprdr_client_file_size_request(wClipboardDelegate* delegate,
+		const wClipboardFileSizeRequest* sizeRequest)
+{
+	CLIPRDR_FILE_CONTENTS_REQUEST request;
+	xfClipboard* clipboard = delegate->custom;
+
+	ZeroMemory(&request, sizeof(request));
+
+	request.streamId = sizeRequest->streamId;
+	request.listIndex = sizeRequest->listIndex;
+	request.cbRequested = sizeof(UINT64);
+	request.dwFlags = FILECONTENTS_SIZE;
+
+	return clipboard->context->ClientFileContentsRequest(clipboard->context, &request);
+}
+
 xfClipboard* xf_clipboard_new(xfContext* xfc)
 {
 	int i, n = 0;
@@ -1756,6 +1772,7 @@ xfClipboard* xf_clipboard_new(xfContext* xfc)
 	clipboard->delegate->ClipboardFileSizeFailure = xf_cliprdr_clipboard_file_size_failure;
 	clipboard->delegate->ClipboardFileRangeSuccess = xf_cliprdr_clipboard_file_range_success;
 	clipboard->delegate->ClipboardFileRangeFailure = xf_cliprdr_clipboard_file_range_failure;
+	clipboard->delegate->ServerRequestFileSize = xf_cliprdr_client_file_size_request;
 
 	return clipboard;
 
