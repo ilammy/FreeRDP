@@ -56,6 +56,10 @@ struct fuse_file
 	wArrayList* contents;
 };
 
+#define FileContentEmpty 0
+#define FileContentReady 1
+#define FileContentFreed 2
+
 struct fuse_subsystem_context
 {
 	char* mount_point;
@@ -65,6 +69,10 @@ struct fuse_subsystem_context
 	struct fuse_file *root_directory;
 
 	CRITICAL_SECTION file_content_lock;
+	HANDLE file_content_event;
+	int file_content_state;
+	const BYTE* file_content_bytes;
+	UINT32 file_content_size;
 };
 
 static void free_fuse_file(void* the_file)
@@ -399,19 +407,77 @@ static void free_fuse(struct fuse_subsystem_context* subsystem)
 	subsystem->fuse = NULL;
 }
 
+static void wait_for_empty_content(struct fuse_subsystem_context* subsystem)
+{
+
+}
+
+static void handoff_content(struct fuse_subsystem_context* subsystem)
+{
+
+}
+
+static void wait_for_ready_content(struct fuse_subsystem_context* subsystem)
+{
+
+}
+
+static void release_content(struct fuse_subsystem_context* subsystem)
+{
+
+}
+
+static void wait_for_freed_content(struct fuse_subsystem_context* subsystem)
+{
+
+}
+
+static void free_content(struct fuse_subsystem_context* subsystem)
+{
+}
+
 static UINT fuse_file_content_success(wClipboardDelegate* delegate, UINT32 streamId,
 		const BYTE* data, UINT32 size)
 {
-	struct posix_subsystem_context* subsystem = NULL;
+	struct fuse_subsystem_context* subsystem = NULL;
 	wClipboard* clipboard = NULL;
 
 	clipboard = delegate->clipboard;
 	subsystem = clipboard->remoteFileSubsystem;
+
+	wait_for_empty_content(subsystem);
+
+	subsystem->file_content_bytes = data;
+	subsystem->file_content_size = size;
+
+	handoff_content(subsystem);
+
+	wait_for_freed_content(subsystem);
+
+	subsystem->file_content_bytes = NULL;
+	subsystem->file_content_size = 0;
+
+	free_content(subsystem);
 }
 
 static UINT fuse_file_content_failure(wClipboardDelegate* delegate, UINT32 streamId)
 {
+	struct fuse_subsystem_context* subsystem = NULL;
+	wClipboard* clipboard = NULL;
 
+	clipboard = delegate->clipboard;
+	subsystem = clipboard->remoteFileSubsystem;
+
+	wait_for_empty_content(subsystem);
+
+	subsystem->file_content_bytes = NULL;
+	subsystem->file_content_size = 0;
+
+	handoff_content(subsystem);
+
+	wait_for_freed_content(subsystem);
+
+	free_content(subsystem);
 }
 
 static BOOL ensure_directory(const char* path)
