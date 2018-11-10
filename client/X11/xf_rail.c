@@ -731,6 +731,7 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
 	{
+		/* TODO: the spec tells us to ignore such orders */
 		WLog_DBG(TAG, "failed to get window for ID %08X", orderInfo->windowId);
 		return FALSE;
 	}
