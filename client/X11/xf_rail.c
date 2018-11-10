@@ -631,23 +631,32 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
  * table in 256-color mode? Well now you know. Enjoy the code below.
  */
 
-static BOOL fill_gdi_palette_for_icon(ICON_INFO* iconInfo, gdiPalette *palette)
+static void fill_gdi_palette_for_icon(ICON_INFO* iconInfo, gdiPalette *palette)
 {
-	if (!iconInfo->cbColorTable)
-		return FALSE;
+	UINT32 i;
 
-	palette->format = PIXEL_FORMAT_ARGB32;
+	palette->format = PIXEL_FORMAT_BGRA32;
 	ZeroMemory(palette->palette, sizeof(palette->palette));
 
-	/* TODO: actually fill the palette */
+	if ((iconInfo->cbColorTable % 4 != 0) || (iconInfo->cbColorTable / 4 > 256))
+	{
+		WLog_WARN(TAG, "weird palette size: %u", iconInfo->cbColorTable);
+		return;
+	}
 
-	return TRUE;
+	for (i = 0; i < iconInfo->cbColorTable / 4; i++)
+	{
+		/* TODO: formatting */
+		palette->palette[i] = (((UINT32) iconInfo->colorTable[4*i + 0]) << 24)
+				    | (((UINT32) iconInfo->colorTable[4*i + 1]) << 16)
+				    | (((UINT32) iconInfo->colorTable[4*i + 2]) << 8)
+				    | (((UINT32) iconInfo->colorTable[4*i + 3]) << 0);
+	}
 }
 
 static BOOL convert_icon_color_to_argb(ICON_INFO* iconInfo, BYTE* argbPixels)
 {
 	DWORD format;
-	BOOL usePalette;
 	gdiPalette palette;
 
 	switch (iconInfo->bpp)
@@ -680,7 +689,7 @@ static BOOL convert_icon_color_to_argb(ICON_INFO* iconInfo, BYTE* argbPixels)
 		return FALSE;
 	}
 
-	usePalette = fill_gdi_palette_for_icon(iconInfo, &palette);
+	fill_gdi_palette_for_icon(iconInfo, &palette);
 
 	return freerdp_image_copy(
 		argbPixels,
@@ -691,7 +700,7 @@ static BOOL convert_icon_color_to_argb(ICON_INFO* iconInfo, BYTE* argbPixels)
 		iconInfo->bitsColor,
 		format,
 		0, 0, 0,
-		usePalette ? &palette : NULL,
+		&palette,
 		FREERDP_FLIP_VERTICAL
 	);
 }
