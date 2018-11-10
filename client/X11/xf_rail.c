@@ -22,6 +22,7 @@
 #endif
 
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 #include <X11/Xutil.h>
 
 #include <winpr/wlog.h>
@@ -63,9 +64,8 @@ static const char* movetype_names[] =
 
 struct xf_rail_icon
 {
-	UINT16 width;
-	UINT16 height;
-	BYTE* argbPixels;
+	long *data;
+	int length;
 };
 typedef struct xf_rail_icon xfRailIcon;
 
@@ -585,9 +585,9 @@ static void RailIconCache_Free(xfRailIconCache* cache)
 	{
 		for (i = 0; i < cache->numCaches * cache->numCacheEntries; i++)
 		{
-			free(cache->entries[i].argbPixels);
+			free(cache->entries[i].data);
 		}
-		free(cache->scratch.argbPixels);
+		free(cache->scratch.data);
 		free(cache->entries);
 		free(cache);
 	}
@@ -616,14 +616,185 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
 	return &cache->entries[cache->numCacheEntries * cacheId + cacheEntry];
 }
 
-static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
+/*
+ * We can't use functions like freerdp_image_copy() for icon format conversion
+ * because _NET_WM_ICON has "array of CARDINAL" format, which for Xlib MUST be
+ * represented with an array of C's longs. Yes, those longs which may have
+ * either 4 or 8 byte size on 64-bit systems, depending on your compiler.
+ * Not BYTE, not UINT32. "long". With your native endianness and size.
+ * Therefore it's easier to make conversions ourselves.
+ *
+ * The format of _NET_WM_ICON is width in pixels, followed by height in pixels,
+ * followed by pixels themselves in ARGB format (e.g., 0xFFFF0000L is red),
+ * in left-to-right top-down order. Did I tell you that RAIL icons are
+ * vertically flipped? And have separate 1-bit alpha channel? And use a color
+ * table in 256-color mode? Well now you know. Enjoy the code below.
+ */
+
+static void fill_gdi_palette_for_icon(ICON_INFO* iconInfo, gdiPalette *palette)
 {
-	WLog_DBG(TAG, "convert icon: cacheEntry=%u cacheId=%u bpp=%u width=%u height=%u",
-		iconInfo->cacheId, iconInfo->cacheEntry, iconInfo->bpp, iconInfo->width, iconInfo->height);
+	UINT32 i;
+
+	palette->format = PIXEL_FORMAT_BGRA32;
+	ZeroMemory(palette->palette, sizeof(palette->palette));
+
+	if ((iconInfo->cbColorTable % 4 != 0) || (iconInfo->cbColorTable / 4 > 256))
+	{
+		WLog_WARN(TAG, "weird palette size: %u", iconInfo->cbColorTable);
+		return;
+	}
+
+	for (i = 0; i < iconInfo->cbColorTable / 4; i++)
+	{
+		/* TODO: formatting */
+		palette->palette[i] = (((UINT32) iconInfo->colorTable[4*i + 0]) << 24)
+				    | (((UINT32) iconInfo->colorTable[4*i + 1]) << 16)
+				    | (((UINT32) iconInfo->colorTable[4*i + 2]) << 8)
+				    | (((UINT32) iconInfo->colorTable[4*i + 3]) << 0);
+	}
 }
 
-static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon)
+static BOOL convert_icon_color_to_argb(ICON_INFO* iconInfo, BYTE* argbPixels)
 {
+	DWORD format;
+	gdiPalette palette;
+
+	switch (iconInfo->bpp)
+	{
+	case 1:
+	case 4:
+		/*
+		 * These formats are not supported by freerdp_image_copy().
+		 * PIXEL_FORMAT_MONO and PIXEL_FORMAT_A4 are *not* correct
+		 * color formats for this. Please fix freerdp_image_copy()
+		 * if you came here to fix a broken icon of some weird app
+		 * that still uses 1 or 4bpp format in the 21st century.
+		 */
+		WLog_WARN(TAG, "1bpp and 4bpp icons are not supported");
+		return FALSE;
+	case 8:
+		format = PIXEL_FORMAT_RGB8;
+		break;
+	case 16:
+		format = PIXEL_FORMAT_RGB15; /* Yes, RGB555. */
+		break;
+	case 24:
+		format = PIXEL_FORMAT_RGB24;
+		break;
+	case 32:
+		format = PIXEL_FORMAT_ARGB32;
+		break;
+	default:
+		WLog_WARN(TAG, "invalid icon bpp: %d", iconInfo->bpp);
+		return FALSE;
+	}
+
+	fill_gdi_palette_for_icon(iconInfo, &palette);
+
+	return freerdp_image_copy(
+		argbPixels,
+		PIXEL_FORMAT_ARGB32,
+		0, 0, 0,
+		iconInfo->width,
+		iconInfo->height,
+		iconInfo->bitsColor,
+		format,
+		0, 0, 0,
+		&palette,
+		FREERDP_FLIP_VERTICAL
+	);
+}
+
+static void apply_icon_alpha_mask(ICON_INFO* iconInfo, BYTE* argbPixels)
+{
+	BYTE nextBit;
+	BYTE* maskByte;
+	UINT32 x, y;
+	UINT32 stride;
+
+	if (!iconInfo->cbBitsMask)
+		return;
+
+	stride = (iconInfo->width + 7) / 8;
+
+	for (y = 0; y < iconInfo->height; y++)
+	{
+		/* ɐᴉlɐɹʇsn∀ uᴉ ǝɹ,ǝʍ ʇɐɥʇ ʇǝƃɹoɟ ʇ,uop */
+		maskByte = &iconInfo->bitsMask[stride * (iconInfo->height - 1 - y)];
+		nextBit = 0x80;
+
+		for (x = 0; x < iconInfo->width; x++)
+		{
+			BYTE alpha = (*maskByte & nextBit) ? 0x00 : 0xFF;
+			argbPixels[4*(x + y * iconInfo->width)] = alpha;
+
+			nextBit >>= 1;
+			if (!nextBit)
+			{
+				nextBit = 0x80;
+				maskByte++;
+			}
+		}
+	}
+}
+
+static BOOL convert_rail_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
+{
+	BYTE* argbPixels;
+	BYTE* nextPixel;
+	long* pixels;
+	int i;
+	int nelements;
+
+	argbPixels = malloc(4 * iconInfo->width * iconInfo->height);
+	if (!argbPixels)
+		return FALSE;
+
+	if (!convert_icon_color_to_argb(iconInfo, argbPixels))
+	{
+		free(argbPixels);
+		return FALSE;
+	}
+
+	apply_icon_alpha_mask(iconInfo, argbPixels);
+
+	nelements = 2 + iconInfo->width * iconInfo->height;
+	pixels = realloc(railIcon->data, nelements * sizeof(*pixels));
+	if (!pixels)
+	{
+		free(argbPixels);
+		return FALSE;
+	}
+
+	railIcon->data = pixels;
+	railIcon->length = nelements;
+
+	pixels[0] = iconInfo->width;
+	pixels[1] = iconInfo->height;
+
+	nextPixel = argbPixels;
+	for (i = 2; i < nelements; i++)
+	{
+		/* TODO: use spaces here, Qt Creator fuck you */
+		pixels[i] = (((long) nextPixel[0]) << 24)
+			  | (((long) nextPixel[1]) << 16)
+			  | (((long) nextPixel[2]) << 8)
+			  | (((long) nextPixel[3]) << 0);
+		nextPixel += 4;
+	}
+
+	free(argbPixels);
+
+	return TRUE;
+}
+
+static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon, BOOL replace)
+{
+	xfContext* xfc = railWindow->xfc; /* TODO: pass as argument */
+
+	XChangeProperty(xfc->display, railWindow->handle, xfc->_NET_WM_ICON,
+		XA_CARDINAL, 32, replace ? PropModeReplace : PropModeAppend,
+		(unsigned char*) icon->data, icon->length);
 }
 
 static xfAppWindow* xf_rail_window_get_by_id(xfContext* xfc, UINT32 windowId)
@@ -638,10 +809,14 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 	xfContext* xfc = (xfContext*) context;
 	xfAppWindow* railWindow;
 	xfRailIcon *icon;
+	BOOL replaceIcon;
+
+	WLog_DBG(TAG, "id=%08X flags=%08X", orderInfo->windowId, orderInfo->fieldFlags);
 
 	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
 	{
+		/* TODO: the spec tells us to ignore such orders */
 		WLog_DBG(TAG, "failed to get window for ID %08X", orderInfo->windowId);
 		return FALSE;
 	}
@@ -657,9 +832,10 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 		return FALSE;
 	}
 
-	xf_rail_convert_icon(windowIcon->iconInfo, icon);
+	convert_rail_icon(windowIcon->iconInfo, icon);
 
-	xf_rail_window_set_icon(railWindow, icon);
+	replaceIcon = !!(orderInfo->fieldFlags & WINDOW_ORDER_STATE_NEW);
+	xf_rail_window_set_icon(railWindow, icon, replaceIcon);
 
 	return TRUE;
 }
@@ -670,6 +846,7 @@ static BOOL xf_rail_window_cached_icon(rdpContext* context,
 	xfContext* xfc = (xfContext*) context;
 	xfAppWindow* railWindow;
 	xfRailIcon *icon;
+	BOOL replaceIcon;
 
 	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
@@ -689,7 +866,8 @@ static BOOL xf_rail_window_cached_icon(rdpContext* context,
 		return FALSE;
 	}
 
-	xf_rail_window_set_icon(railWindow, icon);
+	replaceIcon = !!(orderInfo->fieldFlags & WINDOW_ORDER_STATE_NEW);
+	xf_rail_window_set_icon(railWindow, icon, replaceIcon);
 
 	return TRUE;
 }

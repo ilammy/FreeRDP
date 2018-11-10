@@ -996,6 +996,9 @@ void xf_ShowWindow(xfContext* xfc, xfAppWindow* appWindow, BYTE state)
 	XFlush(xfc->display);
 }
 
+/*
+ * TODO: revive or drop this?
+ */
 #if 0
 void xf_SetWindowIcon(xfContext* xfc, xfAppWindow* appWindow, rdpIcon* icon)
 {
