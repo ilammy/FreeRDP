@@ -61,8 +61,16 @@ static const char* movetype_names[] =
 };
 #endif
 
+struct xf_rail_icon
+{
+};
+typedef struct xf_rail_icon xfRailIcon;
+
 struct xf_rail_icon_cache
 {
+	xfRailIcon* entries;
+	UINT32 numCaches;
+	UINT32 numCacheEntries;
 };
 typedef struct xf_rail_icon_cache xfRailIconCache;
 
@@ -536,13 +544,26 @@ static BOOL xf_rail_window_delete(rdpContext* context,
 	return TRUE;
 }
 
-static xfRailIconCache* RailIconCache_New(void)
+static xfRailIconCache* RailIconCache_New(rdpSettings* settings)
 {
 	xfRailIconCache* cache;
 
 	cache = calloc(1, sizeof(*cache));
 	if (!cache)
 	{
+		return NULL;
+	}
+
+	cache->numCaches = settings->RemoteAppNumIconCaches;
+	cache->numCacheEntries = settings->RemoteAppNumIconCacheEntries;
+
+	cache->entries = calloc(cache->numCaches * cache->numCacheEntries,
+		sizeof(*cache->entries));
+	if (!cache->entries)
+	{
+		WLog_ERR(TAG, "failed to allocate icon cache %d x %d entries",
+			cache->numCaches, cache->numCacheEntries);
+		free(cache);
 		return NULL;
 	}
 
@@ -553,6 +574,7 @@ static void RailIconCache_Free(xfRailIconCache* cache)
 {
 	if (cache)
 	{
+		free(cache->entries);
 		free(cache);
 	}
 }
@@ -938,7 +960,7 @@ int xf_rail_init(xfContext* xfc, RailClientContext* rail)
 
 	xfc->railWindows->valueFree = rail_window_free;
 
-	xfc->railIconCache = RailIconCache_New();
+	xfc->railIconCache = RailIconCache_New(xfc->context.settings);
 
 	if (!xfc->railIconCache)
 	{
