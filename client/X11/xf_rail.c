@@ -22,6 +22,7 @@
 #endif
 
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 #include <X11/Xutil.h>
 
 #include <winpr/wlog.h>
@@ -694,6 +695,24 @@ static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 
 static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon)
 {
+	xfContext* xfc = railWindow->xfc; /* TODO: pass as argument */
+	long *bytes;
+	UINT32 nelements = 2 + (UINT32) icon->width * (UINT32) icon->height;
+	UINT32 i;
+
+	/* TODO: prepare bytes in the same format in the icon directly */
+	bytes = calloc(nelements, sizeof(*bytes));
+	bytes[0] = icon->width;
+	bytes[1] = icon->height;
+	/* this is fucked up, but Xlib actually requires long types (on 64-bit system it is 8 byte wide) */
+	for (i = 0; i < ((UINT32) icon->width * (UINT32) icon->height); i++)
+	{
+		bytes[2 + i] = *((UINT32*) &icon->argbPixels[i * 4]);
+	}
+
+	XChangeProperty(xfc->display, railWindow->handle, xfc->_NET_WM_ICON, XA_CARDINAL, 32, PropModeReplace, (unsigned char*) bytes, nelements);
+
+	free(bytes);
 }
 
 static xfAppWindow* xf_rail_window_get_by_id(xfContext* xfc, UINT32 windowId)
