@@ -74,6 +74,7 @@ struct xf_rail_icon_cache
 	xfRailIcon* entries;
 	UINT32 numCaches;
 	UINT32 numCacheEntries;
+	xfRailIcon scratch;
 };
 typedef struct xf_rail_icon_cache xfRailIconCache;
 
@@ -583,6 +584,7 @@ static void RailIconCache_Free(xfRailIconCache* cache)
 		{
 			free(cache->entries[i].argbPixels);
 		}
+		free(cache->scratch.argbPixels);
 		free(cache->entries);
 		free(cache);
 	}
@@ -591,6 +593,11 @@ static void RailIconCache_Free(xfRailIconCache* cache)
 static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
                                         UINT8 cacheId, UINT16 cacheEntry)
 {
+	if (cacheId >= cache->numCaches)
+		return NULL;
+	if (cacheEntry >= cache->numCacheEntries)
+		return NULL;
+
 	/*
 	 * MS-RDPERP 2.2.1.2.3 Icon Info (TS_ICON_INFO)
 	 *
@@ -601,12 +608,7 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
 	 * but the actual protocol field is 1-byte wide.
 	 */
 	if (cacheId == 0xFF)
-		return NULL;
-
-	if (cacheId >= cache->numCaches)
-		return NULL;
-	if (cacheEntry >= cache->numCacheEntries)
-		return NULL;
+		return &cache->scratch;
 
 	return &cache->entries[cache->numCacheEntries * cacheId + cacheEntry];
 }
