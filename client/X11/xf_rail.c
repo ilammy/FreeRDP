@@ -61,6 +61,23 @@ static const char* movetype_names[] =
 };
 #endif
 
+struct xf_rail_icon
+{
+	UINT16 width;
+	UINT16 height;
+	BYTE* argbPixels;
+};
+typedef struct xf_rail_icon xfRailIcon;
+
+struct xf_rail_icon_cache
+{
+	xfRailIcon* entries;
+	UINT32 numCaches;
+	UINT32 numCacheEntries;
+	xfRailIcon scratch;
+};
+typedef struct xf_rail_icon_cache xfRailIconCache;
+
 void xf_rail_enable_remoteapp_mode(xfContext* xfc)
 {
 	if (!xfc->remote_app)
@@ -531,15 +548,118 @@ static BOOL xf_rail_window_delete(rdpContext* context,
 	return TRUE;
 }
 
+static xfRailIconCache* RailIconCache_New(rdpSettings* settings)
+{
+	xfRailIconCache* cache;
+
+	cache = calloc(1, sizeof(*cache));
+	if (!cache)
+	{
+		return NULL;
+	}
+
+	cache->numCaches = settings->RemoteAppNumIconCaches;
+	cache->numCacheEntries = settings->RemoteAppNumIconCacheEntries;
+
+	WLog_INFO(TAG, "RAIL icon cache: %d x %d entries",
+		cache->numCaches, cache->numCacheEntries);
+
+	cache->entries = calloc(cache->numCaches * cache->numCacheEntries,
+		sizeof(*cache->entries));
+	if (!cache->entries)
+	{
+		WLog_ERR(TAG, "failed to allocate icon cache %d x %d entries",
+			cache->numCaches, cache->numCacheEntries);
+		free(cache);
+		return NULL;
+	}
+
+	return cache;
+}
+
+static void RailIconCache_Free(xfRailIconCache* cache)
+{
+	size_t i;
+
+	if (cache)
+	{
+		for (i = 0; i < cache->numCaches * cache->numCacheEntries; i++)
+		{
+			free(cache->entries[i].argbPixels);
+		}
+		free(cache->scratch.argbPixels);
+		free(cache->entries);
+		free(cache);
+	}
+}
+
+static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
+                                        UINT8 cacheId, UINT16 cacheEntry)
+{
+	/*
+	 * MS-RDPERP 2.2.1.2.3 Icon Info (TS_ICON_INFO)
+	 *
+	 * CacheId (1 byte):
+	 *     If the value is 0xFFFF, the icon SHOULD NOT be cached.
+	 *
+	 * Yes, the spec says "0xFFFF" in the 2018-03-16 revision,
+	 * but the actual protocol field is 1-byte wide.
+	 */
+	if (cacheId == 0xFF)
+		return &cache->scratch;
+
+	if (cacheId >= cache->numCaches)
+		return NULL;
+	if (cacheEntry >= cache->numCacheEntries)
+		return NULL;
+
+	return &cache->entries[cache->numCacheEntries * cacheId + cacheEntry];
+}
+
+static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
+{
+	WLog_DBG(TAG, "convert icon: cacheEntry=%u cacheId=%u bpp=%u width=%u height=%u",
+		iconInfo->cacheId, iconInfo->cacheEntry, iconInfo->bpp, iconInfo->width, iconInfo->height);
+}
+
+static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon)
+{
+}
+
+static xfAppWindow* xf_rail_window_get_by_id(xfContext* xfc, UINT32 windowId)
+{
+	return (xfAppWindow*) HashTable_GetItemValue(xfc->railWindows,
+		(void*)(UINT_PTR) windowId);
+}
+
 static BOOL xf_rail_window_icon(rdpContext* context,
                                 WINDOW_ORDER_INFO* orderInfo, WINDOW_ICON_ORDER* windowIcon)
 {
 	xfContext* xfc = (xfContext*) context;
-	xfAppWindow* railWindow = (xfAppWindow*) HashTable_GetItemValue(xfc->railWindows,
-	                          (void*)(UINT_PTR) orderInfo->windowId);
+	xfAppWindow* railWindow;
+	xfRailIcon *icon;
 
+	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
+	{
+		WLog_DBG(TAG, "failed to get window for ID %08X", orderInfo->windowId);
 		return FALSE;
+	}
+
+	icon = RailIconCache_Lookup(xfc->railIconCache,
+		windowIcon->iconInfo->cacheId,
+		windowIcon->iconInfo->cacheEntry);
+	if (!icon)
+	{
+		WLog_DBG(TAG, "failed to get icon from cache %02X:%04X",
+			windowIcon->iconInfo->cacheId,
+			windowIcon->iconInfo->cacheEntry);
+		return FALSE;
+	}
+
+	xf_rail_convert_icon(windowIcon->iconInfo, icon);
+
+	xf_rail_window_set_icon(railWindow, icon);
 
 	return TRUE;
 }
@@ -547,6 +667,30 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 static BOOL xf_rail_window_cached_icon(rdpContext* context,
                                        WINDOW_ORDER_INFO* orderInfo, WINDOW_CACHED_ICON_ORDER* windowCachedIcon)
 {
+	xfContext* xfc = (xfContext*) context;
+	xfAppWindow* railWindow;
+	xfRailIcon *icon;
+
+	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
+	if (!railWindow)
+	{
+		WLog_DBG(TAG, "failed to get window for ID %04X", orderInfo->windowId);
+		return FALSE;
+	}
+
+	icon = RailIconCache_Lookup(xfc->railIconCache,
+		windowCachedIcon->cachedIcon.cacheId,
+		windowCachedIcon->cachedIcon.cacheEntry);
+	if (!icon)
+	{
+		WLog_DBG(TAG, "failed to get icon from cache %02X:%04X",
+			windowCachedIcon->cachedIcon.cacheId,
+			windowCachedIcon->cachedIcon.cacheEntry);
+		return FALSE;
+	}
+
+	xf_rail_window_set_icon(railWindow, icon);
+
 	return TRUE;
 }
 
@@ -911,6 +1055,15 @@ int xf_rail_init(xfContext* xfc, RailClientContext* rail)
 		return 0;
 
 	xfc->railWindows->valueFree = rail_window_free;
+
+	xfc->railIconCache = RailIconCache_New(xfc->context.settings);
+
+	if (!xfc->railIconCache)
+	{
+		HashTable_Free(xfc->railWindows);
+		return 0;
+	}
+
 	return 1;
 }
 
@@ -926,6 +1079,12 @@ int xf_rail_uninit(xfContext* xfc, RailClientContext* rail)
 	{
 		HashTable_Free(xfc->railWindows);
 		xfc->railWindows = NULL;
+	}
+
+	if (xfc->railIconCache)
+	{
+		RailIconCache_Free(xfc->railIconCache);
+		xfc->railIconCache = NULL;
 	}
 
 	return 1;
