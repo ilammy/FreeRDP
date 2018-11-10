@@ -63,6 +63,9 @@ static const char* movetype_names[] =
 
 struct xf_rail_icon
 {
+	UINT16 width;
+	UINT16 height;
+	BYTE* pixels;
 };
 typedef struct xf_rail_icon xfRailIcon;
 
@@ -572,11 +575,40 @@ static xfRailIconCache* RailIconCache_New(rdpSettings* settings)
 
 static void RailIconCache_Free(xfRailIconCache* cache)
 {
+	size_t i;
+
 	if (cache)
 	{
+		for (i = 0; i < cache->numCaches * cache->numCacheEntries; i++)
+		{
+			free(cache->entries[i].pixels);
+		}
 		free(cache->entries);
 		free(cache);
 	}
+}
+
+static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
+                                        UINT8 cacheId, UINT16 cacheEntry)
+{
+	/*
+	 * MS-RDPERP 2.2.1.2.3 Icon Info (TS_ICON_INFO)
+	 *
+	 * CacheId (1 byte):
+	 *     If the value is 0xFFFF, the icon SHOULD NOT be cached.
+	 *
+	 * Yes, the spec says "0xFFFF" in the 2018-03-16 revision,
+	 * but the actual protocol field is 1-byte wide.
+	 */
+	if (cacheId == 0xFF)
+		return NULL;
+
+	if (cacheId >= cache->numCaches)
+		return NULL;
+	if (cacheEntry >= cache->numCacheEntries)
+		return NULL;
+
+	return &cache->entries[cache->numCacheEntries * cacheId + cacheEntry];
 }
 
 static BOOL xf_rail_window_icon(rdpContext* context,
