@@ -613,15 +613,40 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
 	return &cache->entries[cache->numCacheEntries * cacheId + cacheEntry];
 }
 
+static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
+{
+}
+
+static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon)
+{
+}
+
+static xfAppWindow* xf_rail_window_get_by_id(xfContext* xfc, UINT32 windowId)
+{
+	return (xfAppWindow*) HashTable_GetItemValue(xfc->railWindows,
+		(void*)(UINT_PTR) windowId);
+}
+
 static BOOL xf_rail_window_icon(rdpContext* context,
                                 WINDOW_ORDER_INFO* orderInfo, WINDOW_ICON_ORDER* windowIcon)
 {
 	xfContext* xfc = (xfContext*) context;
-	xfAppWindow* railWindow = (xfAppWindow*) HashTable_GetItemValue(xfc->railWindows,
-	                          (void*)(UINT_PTR) orderInfo->windowId);
+	xfAppWindow* railWindow;
+	xfRailIcon *icon;
 
+	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
 		return FALSE;
+
+	icon = RailIconCache_Lookup(xfc->railIconCache,
+		windowIcon->iconInfo->cacheId,
+		windowIcon->iconInfo->cacheEntry);
+	if (!icon)
+		return FALSE;
+
+	xf_rail_convert_icon(windowIcon->iconInfo, icon);
+
+	xf_rail_window_set_icon(railWindow, icon);
 
 	return TRUE;
 }
@@ -629,6 +654,22 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 static BOOL xf_rail_window_cached_icon(rdpContext* context,
                                        WINDOW_ORDER_INFO* orderInfo, WINDOW_CACHED_ICON_ORDER* windowCachedIcon)
 {
+	xfContext* xfc = (xfContext*) context;
+	xfAppWindow* railWindow;
+	xfRailIcon *icon;
+
+	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
+	if (!railWindow)
+		return FALSE;
+
+	icon = RailIconCache_Lookup(xfc->railIconCache,
+		windowCachedIcon->cachedIcon.cacheId,
+		windowCachedIcon->cachedIcon.cacheEntry);
+	if (!icon)
+		return FALSE;
+
+	xf_rail_window_set_icon(railWindow, icon);
+
 	return TRUE;
 }
 
