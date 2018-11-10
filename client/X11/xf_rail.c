@@ -615,6 +615,8 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
 
 static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 {
+	WLog_DBG(TAG, "convert icon: cacheEntry=%u cacheId=%u bpp=%u width=%u height=%u",
+		iconInfo->cacheId, iconInfo->cacheEntry, iconInfo->bpp, iconInfo->width, iconInfo->height);
 }
 
 static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon)
@@ -636,13 +638,21 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 
 	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
+	{
+		WLog_DBG(TAG, "failed to get window for ID %08X", orderInfo->windowId);
 		return FALSE;
+	}
 
 	icon = RailIconCache_Lookup(xfc->railIconCache,
 		windowIcon->iconInfo->cacheId,
 		windowIcon->iconInfo->cacheEntry);
 	if (!icon)
+	{
+		WLog_DBG(TAG, "failed to get icon from cache %02X:%04X",
+			windowIcon->iconInfo->cacheId,
+			windowIcon->iconInfo->cacheEntry);
 		return FALSE;
+	}
 
 	xf_rail_convert_icon(windowIcon->iconInfo, icon);
 
@@ -660,13 +670,21 @@ static BOOL xf_rail_window_cached_icon(rdpContext* context,
 
 	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
+	{
+		WLog_DBG(TAG, "failed to get window for ID %04X", orderInfo->windowId);
 		return FALSE;
+	}
 
 	icon = RailIconCache_Lookup(xfc->railIconCache,
 		windowCachedIcon->cachedIcon.cacheId,
 		windowCachedIcon->cachedIcon.cacheEntry);
 	if (!icon)
+	{
+		WLog_DBG(TAG, "failed to get icon from cache %02X:%04X",
+			windowCachedIcon->cachedIcon.cacheId,
+			windowCachedIcon->cachedIcon.cacheEntry);
 		return FALSE;
+	}
 
 	xf_rail_window_set_icon(railWindow, icon);
 
