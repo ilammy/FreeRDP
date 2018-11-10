@@ -618,8 +618,78 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
 
 static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 {
+	BYTE* buffer;
+	UINT32 size;
+	DWORD format;
+
 	WLog_DBG(TAG, "convert icon: cacheEntry=%u cacheId=%u bpp=%u width=%u height=%u",
 		iconInfo->cacheId, iconInfo->cacheEntry, iconInfo->bpp, iconInfo->width, iconInfo->height);
+
+	railIcon->width = 0;
+	railIcon->height = 0;
+
+	size = 4 * iconInfo->width * iconInfo->height;
+	buffer = realloc(railIcon->argbPixels, size);
+	if (!buffer)
+	{
+		WLog_DBG(TAG, "failed to allocate byte buffer: %u bytes", size);
+		return;
+	}
+	railIcon->argbPixels = buffer;
+
+	switch (iconInfo->bpp)
+	{
+	/*
+	 * TODO: support palettes for 1,4,8bpp formats
+	 */
+	case 1:
+		format = PIXEL_FORMAT_MONO;
+		break;
+	case 4:
+		format = PIXEL_FORMAT_A4;
+		break;
+	case 8:
+		format = PIXEL_FORMAT_RGB8;
+		break;
+	case 16:
+		format = PIXEL_FORMAT_RGB15;
+		break;
+	case 24:
+		format = PIXEL_FORMAT_RGB24;
+		break;
+	case 32:
+		format = PIXEL_FORMAT_XRGB32;
+		break;
+	default:
+		WLog_DBG(TAG, "invalid bpp: %d", iconInfo->bpp);
+		return;
+	}
+
+	if (!freerdp_image_copy(buffer,			/* pDstData*/
+				PIXEL_FORMAT_XRGB32,	/* DstFormat */
+				0,			/* nDstStep */
+				0,			/* nXDst */
+				0,			/* nYDst */
+				iconInfo->width,	/* nWidth */
+				iconInfo->height,	/* nHeight */
+				iconInfo->bitsColor,	/* pSrcData */
+				format,			/* SrcFormat */
+				0,			/* nSrcStep */
+				0,			/* nXSrc */
+				0,			/* nYSrc */
+				NULL,			/* palette */
+				FREERDP_FLIP_NONE))	/* flags */
+	{
+		WLog_DBG(TAG, "icon conversion failed");
+		return;
+	}
+
+	/*
+	 * TODO: handle alpha
+	 */
+
+	railIcon->width = iconInfo->width;
+	railIcon->height = iconInfo->height;
 }
 
 static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon)
