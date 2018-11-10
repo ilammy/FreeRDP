@@ -667,7 +667,7 @@ static BOOL convert_icon_color_to_argb(ICON_INFO* iconInfo, BYTE* argbPixels)
 		format = PIXEL_FORMAT_RGB8;
 		break;
 	case 16:
-		format = PIXEL_FORMAT_RGB15; /* Yes, RGB565. */
+		format = PIXEL_FORMAT_RGB15; /* Yes, RGB555. */
 		break;
 	case 24:
 		format = PIXEL_FORMAT_RGB24;
