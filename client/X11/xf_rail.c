@@ -659,7 +659,7 @@ static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 		format = PIXEL_FORMAT_RGB24;
 		break;
 	case 32:
-		format = PIXEL_FORMAT_XRGB32;
+		format = PIXEL_FORMAT_ARGB32;
 		break;
 	default:
 		WLog_DBG(TAG, "invalid bpp: %d", iconInfo->bpp);
@@ -667,7 +667,7 @@ static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 	}
 
 	if (!freerdp_image_copy(buffer,			/* pDstData*/
-				PIXEL_FORMAT_XRGB32,	/* DstFormat */
+				PIXEL_FORMAT_BGRA32,	/* DstFormat */
 				0,			/* nDstStep */
 				0,			/* nXDst */
 				0,			/* nYDst */
@@ -679,7 +679,7 @@ static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 				0,			/* nXSrc */
 				0,			/* nYSrc */
 				NULL,			/* palette */
-				FREERDP_FLIP_NONE))	/* flags */
+				FREERDP_FLIP_VERTICAL))	/* flags */
 	{
 		WLog_DBG(TAG, "icon conversion failed");
 		return;
