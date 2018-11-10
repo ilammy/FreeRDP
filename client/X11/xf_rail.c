@@ -61,6 +61,11 @@ static const char* movetype_names[] =
 };
 #endif
 
+struct xf_rail_icon_cache
+{
+};
+typedef struct xf_rail_icon_cache xfRailIconCache;
+
 void xf_rail_enable_remoteapp_mode(xfContext* xfc)
 {
 	if (!xfc->remote_app)
@@ -531,6 +536,27 @@ static BOOL xf_rail_window_delete(rdpContext* context,
 	return TRUE;
 }
 
+static xfRailIconCache* RailIconCache_New(void)
+{
+	xfRailIconCache* cache;
+
+	cache = calloc(1, sizeof(*cache));
+	if (!cache)
+	{
+		return NULL;
+	}
+
+	return cache;
+}
+
+static void RailIconCache_Free(xfRailIconCache* cache)
+{
+	if (cache)
+	{
+		free(cache);
+	}
+}
+
 static BOOL xf_rail_window_icon(rdpContext* context,
                                 WINDOW_ORDER_INFO* orderInfo, WINDOW_ICON_ORDER* windowIcon)
 {
@@ -911,6 +937,15 @@ int xf_rail_init(xfContext* xfc, RailClientContext* rail)
 		return 0;
 
 	xfc->railWindows->valueFree = rail_window_free;
+
+	xfc->railIconCache = RailIconCache_New();
+
+	if (!xfc->railIconCache)
+	{
+		HashTable_Free(xfc->railWindows);
+		return 0;
+	}
+
 	return 1;
 }
 
@@ -926,6 +961,12 @@ int xf_rail_uninit(xfContext* xfc, RailClientContext* rail)
 	{
 		HashTable_Free(xfc->railWindows);
 		xfc->railWindows = NULL;
+	}
+
+	if (xfc->railIconCache)
+	{
+		RailIconCache_Free(xfc->railIconCache);
+		xfc->railIconCache = NULL;
 	}
 
 	return 1;
