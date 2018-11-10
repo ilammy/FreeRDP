@@ -137,7 +137,10 @@ static BOOL WLog_ConsoleAppender_WriteMessage(wLog* log, wLogAppender* appender,
 	}
 
 	if (message->Level != WLOG_OFF)
+	{
 		fprintf(fp, "%s%s\n", message->PrefixString, message->TextString);
+		fflush(fp);
+	}
 #endif
 	return TRUE;
 }
