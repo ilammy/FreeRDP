@@ -716,7 +716,7 @@ static void apply_icon_alpha_mask(ICON_INFO* iconInfo, BYTE* argbPixels)
 
 		for (x = 0; x < iconInfo->width; x++)
 		{
-			BYTE alpha = (*maskByte & nextBit) ? 0xFF : 0x00;
+			BYTE alpha = (*maskByte & nextBit) ? 0x00 : 0xFF;
 			argbPixels[4*(x + y * iconInfo->width)] = alpha;
 
 			nextBit >>= 1;
