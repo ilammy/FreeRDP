@@ -693,7 +693,7 @@ static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 	railIcon->height = iconInfo->height;
 }
 
-static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon)
+static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon, BOOL replace)
 {
 	xfContext* xfc = railWindow->xfc; /* TODO: pass as argument */
 	long *bytes;
@@ -710,7 +710,7 @@ static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon)
 		bytes[2 + i] = *((UINT32*) &icon->argbPixels[i * 4]);
 	}
 
-	XChangeProperty(xfc->display, railWindow->handle, xfc->_NET_WM_ICON, XA_CARDINAL, 32, PropModeReplace, (unsigned char*) bytes, nelements);
+	XChangeProperty(xfc->display, railWindow->handle, xfc->_NET_WM_ICON, XA_CARDINAL, 32, replace ? PropModeReplace : PropModeAppend, (unsigned char*) bytes, nelements);
 
 	free(bytes);
 }
@@ -727,6 +727,9 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 	xfContext* xfc = (xfContext*) context;
 	xfAppWindow* railWindow;
 	xfRailIcon *icon;
+	BOOL replaceIcon;
+
+	WLog_DBG(TAG, "id=%08X flags=%08X", orderInfo->windowId, orderInfo->fieldFlags);
 
 	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
@@ -749,7 +752,8 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 
 	xf_rail_convert_icon(windowIcon->iconInfo, icon);
 
-	xf_rail_window_set_icon(railWindow, icon);
+	replaceIcon = !!(orderInfo->fieldFlags & WINDOW_ORDER_STATE_NEW);
+	xf_rail_window_set_icon(railWindow, icon, replaceIcon);
 
 	return TRUE;
 }
@@ -760,6 +764,7 @@ static BOOL xf_rail_window_cached_icon(rdpContext* context,
 	xfContext* xfc = (xfContext*) context;
 	xfAppWindow* railWindow;
 	xfRailIcon *icon;
+	BOOL replaceIcon;
 
 	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
@@ -779,7 +784,8 @@ static BOOL xf_rail_window_cached_icon(rdpContext* context,
 		return FALSE;
 	}
 
-	xf_rail_window_set_icon(railWindow, icon);
+	replaceIcon = !!(orderInfo->fieldFlags & WINDOW_ORDER_STATE_NEW);
+	xf_rail_window_set_icon(railWindow, icon, replaceIcon);
 
 	return TRUE;
 }
