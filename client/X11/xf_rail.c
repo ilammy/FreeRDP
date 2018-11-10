@@ -65,7 +65,7 @@ struct xf_rail_icon
 {
 	UINT16 width;
 	UINT16 height;
-	BYTE* pixels;
+	BYTE* argbPixels;
 };
 typedef struct xf_rail_icon xfRailIcon;
 
@@ -581,7 +581,7 @@ static void RailIconCache_Free(xfRailIconCache* cache)
 	{
 		for (i = 0; i < cache->numCaches * cache->numCacheEntries; i++)
 		{
-			free(cache->entries[i].pixels);
+			free(cache->entries[i].argbPixels);
 		}
 		free(cache->entries);
 		free(cache);
