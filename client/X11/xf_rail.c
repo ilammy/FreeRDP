@@ -593,11 +593,6 @@ static void RailIconCache_Free(xfRailIconCache* cache)
 static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
                                         UINT8 cacheId, UINT16 cacheEntry)
 {
-	if (cacheId >= cache->numCaches)
-		return NULL;
-	if (cacheEntry >= cache->numCacheEntries)
-		return NULL;
-
 	/*
 	 * MS-RDPERP 2.2.1.2.3 Icon Info (TS_ICON_INFO)
 	 *
@@ -609,6 +604,11 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
 	 */
 	if (cacheId == 0xFF)
 		return &cache->scratch;
+
+	if (cacheId >= cache->numCaches)
+		return NULL;
+	if (cacheEntry >= cache->numCacheEntries)
+		return NULL;
 
 	return &cache->entries[cache->numCacheEntries * cacheId + cacheEntry];
 }
