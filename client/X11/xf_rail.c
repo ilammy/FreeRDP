@@ -715,7 +715,13 @@ static void apply_icon_alpha_mask(ICON_INFO* iconInfo, BYTE* argbPixels)
 	if (!iconInfo->cbBitsMask)
 		return;
 
-	stride = (iconInfo->width + 7) / 8;
+	/*
+	 * Stride is based on height rather than width because the server
+	 * seems to do so. For example, for 16x16 icons cbBitsMask is 64
+	 * (while in fact it should be 16 * 16 / 8 = 32), with two bytes
+	 * of padding at the end of each row.
+	 */
+	stride = iconInfo->cbBitsMask / iconInfo->height;
 
 	for (y = 0; y < iconInfo->height; y++)
 	{
