@@ -818,6 +818,16 @@ static xfAppWindow* xf_rail_get_window_by_id(xfContext* xfc, UINT32 windowId)
 		(void*)(UINT_PTR) windowId);
 }
 
+/*
+ * MS-RDPERP 3.2.5.1.6 Processing Window Information Orders
+ *
+ * Upon receipt of a Window Information Order for an icon or cached icon,
+ * as specified in sections 2.2.1.3.1.2.2 and 2.2.1.3.1.2.3, the client
+ * SHOULD locate the local RAIL window that corresponds to the WindowId
+ * reported in the Hdr field and apply the icon updates to the RAIL window.
+ * If no such window can be found, the client SHOULD ignore the order.
+ */
+
 static BOOL xf_rail_window_icon(rdpContext* context,
                                 WINDOW_ORDER_INFO* orderInfo, WINDOW_ICON_ORDER* windowIcon)
 {
@@ -828,11 +838,7 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 
 	railWindow = xf_rail_get_window_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
-	{
-		/* TODO: the spec tells us to ignore such orders */
-		WLog_DBG(TAG, "failed to get window for ID %08X", orderInfo->windowId);
-		return FALSE;
-	}
+		return TRUE;
 
 	icon = RailIconCache_Lookup(xfc->railIconCache,
 		windowIcon->iconInfo->cacheId,
@@ -845,7 +851,10 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 		return FALSE;
 	}
 
-	convert_rail_icon(windowIcon->iconInfo, icon);
+	if (!convert_rail_icon(windowIcon->iconInfo, icon))
+	{
+		WLog_DBG(TAG, "failed to convert icon for window %08X", orderInfo->windowId);
+	}
 
 	replaceIcon = !!(orderInfo->fieldFlags & WINDOW_ORDER_STATE_NEW);
 	xf_rail_set_window_icon(xfc, railWindow, icon, replaceIcon);
@@ -863,10 +872,7 @@ static BOOL xf_rail_window_cached_icon(rdpContext* context,
 
 	railWindow = xf_rail_get_window_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
-	{
-		WLog_DBG(TAG, "failed to get window for ID %04X", orderInfo->windowId);
-		return FALSE;
-	}
+		return TRUE;
 
 	icon = RailIconCache_Lookup(xfc->railIconCache,
 		windowCachedIcon->cachedIcon.cacheId,
