@@ -554,9 +554,7 @@ static xfRailIconCache* RailIconCache_New(rdpSettings* settings)
 
 	cache = calloc(1, sizeof(*cache));
 	if (!cache)
-	{
 		return NULL;
-	}
 
 	cache->numCaches = settings->RemoteAppNumIconCaches;
 	cache->numCacheEntries = settings->RemoteAppNumIconCacheEntries;
