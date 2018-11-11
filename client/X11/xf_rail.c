@@ -616,21 +616,6 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
 	return &cache->entries[cache->numCacheEntries * cacheId + cacheEntry];
 }
 
-/*
- * We can't use functions like freerdp_image_copy() for icon format conversion
- * because _NET_WM_ICON has "array of CARDINAL" format, which for Xlib MUST be
- * represented with an array of C's longs. Yes, those longs which may have
- * either 4 or 8 byte size on 64-bit systems, depending on your compiler.
- * Not BYTE, not UINT32. "long". With your native endianness and size.
- * Therefore it's easier to make conversions ourselves.
- *
- * The format of _NET_WM_ICON is width in pixels, followed by height in pixels,
- * followed by pixels themselves in ARGB format (e.g., 0xFFFF0000L is red),
- * in left-to-right top-down order. Did I tell you that RAIL icons are
- * vertically flipped? And have separate 1-bit alpha channel? And use a color
- * table in 256-color mode? Well now you know. Enjoy the code below.
- */
-
 static inline UINT32 read_color_quad(const BYTE* pixels)
 {
 	return (((UINT32) pixels[0]) << 24)
@@ -639,6 +624,10 @@ static inline UINT32 read_color_quad(const BYTE* pixels)
 	     | (((UINT32) pixels[3]) << 0);
 }
 
+/*
+ * DIB color palettes are arrays of RGBQUAD structs with colors in BGRX format.
+ * They are used only by 1, 2, 4, and 8-bit bitmaps.
+ */
 static void fill_gdi_palette_for_icon(ICON_INFO* iconInfo, gdiPalette *palette)
 {
 	UINT32 i;
@@ -646,10 +635,8 @@ static void fill_gdi_palette_for_icon(ICON_INFO* iconInfo, gdiPalette *palette)
 	palette->format = PIXEL_FORMAT_BGRX32;
 	ZeroMemory(palette->palette, sizeof(palette->palette));
 
-	/*
-	 * DIB color palettes are arrays of RGBQUAD structs which store
-	 * colors in BGRX format.
-	 */
+	if (!iconInfo->cbColorTable)
+		return;
 
 	if ((iconInfo->cbColorTable % 4 != 0) || (iconInfo->cbColorTable / 4 > 256))
 	{
@@ -668,6 +655,11 @@ static BOOL convert_icon_color_to_argb(ICON_INFO* iconInfo, BYTE* argbPixels)
 	DWORD format;
 	gdiPalette palette;
 
+	/*
+	 * Color formats used by icons are DIB bitmap formats (2-bit format
+	 * is not used by MS-RDPERP). Note that 16-bit is RGB555, not RGB565,
+	 * and that 32-bit format uses BGRA order.
+	 */
 	switch (iconInfo->bpp)
 	{
 	case 1:
@@ -685,14 +677,12 @@ static BOOL convert_icon_color_to_argb(ICON_INFO* iconInfo, BYTE* argbPixels)
 		format = PIXEL_FORMAT_RGB8;
 		break;
 	case 16:
-		/* Yes, it's RGB555, not RGB565. */
 		format = PIXEL_FORMAT_RGB15;
 		break;
 	case 24:
 		format = PIXEL_FORMAT_RGB24;
 		break;
 	case 32:
-		/* BGRA because endianness is fun. */
 		format = PIXEL_FORMAT_BGRA32;
 		break;
 	default:
@@ -738,8 +728,8 @@ static void apply_icon_alpha_mask(ICON_INFO* iconInfo, BYTE* argbPixels)
 
 	/*
 	 * Each byte encodes 8 adjacent pixels (with LSB padding as needed).
-	 * And due to hysterical raisins, stride of Microsoft's DIB bitmaps
-	 * must be a multiple of 4.
+	 * And due to hysterical raisins, stride of DIB bitmaps must be
+	 * a multiple of 4 bytes.
 	 */
 	stride = round_up(div_ceil(iconInfo->width, 8), 4);
 
@@ -764,6 +754,16 @@ static void apply_icon_alpha_mask(ICON_INFO* iconInfo, BYTE* argbPixels)
 	}
 }
 
+/*
+ * _NET_WM_ICON format is defined as "array of CARDINAL" values which for
+ * Xlib must be represented with an array of C's "long" values. Note that
+ * "long" != "INT32" on 64-bit systems. Therefore we can't simply cast
+ * the bitmap data as (unsigned char*), we have to copy all the pixels.
+ *
+ * The first two values are width and height followed by actual color data
+ * in ARGB format (e.g., 0xFFFF0000L is opaque red), pixels are in normal,
+ * left-to-right top-down order.
+ */
 static BOOL convert_rail_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 {
 	BYTE* argbPixels;
