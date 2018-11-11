@@ -631,6 +631,14 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
  * table in 256-color mode? Well now you know. Enjoy the code below.
  */
 
+static inline UINT32 read_color_quad(const BYTE* pixels)
+{
+	return (((UINT32) pixels[0]) << 24)
+	     | (((UINT32) pixels[1]) << 16)
+	     | (((UINT32) pixels[2]) << 8)
+	     | (((UINT32) pixels[3]) << 0);
+}
+
 static void fill_gdi_palette_for_icon(ICON_INFO* iconInfo, gdiPalette *palette)
 {
 	UINT32 i;
@@ -651,11 +659,7 @@ static void fill_gdi_palette_for_icon(ICON_INFO* iconInfo, gdiPalette *palette)
 
 	for (i = 0; i < iconInfo->cbColorTable / 4; i++)
 	{
-		/* TODO: formatting */
-		palette->palette[i] = (((UINT32) iconInfo->colorTable[4*i + 0]) << 24)
-				    | (((UINT32) iconInfo->colorTable[4*i + 1]) << 16)
-				    | (((UINT32) iconInfo->colorTable[4*i + 2]) << 8)
-				    | (((UINT32) iconInfo->colorTable[4*i + 3]) << 0);
+		palette->palette[i] = read_color_quad(&iconInfo->colorTable[4 * i]);
 	}
 }
 
@@ -797,11 +801,7 @@ static BOOL convert_rail_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 	nextPixel = argbPixels;
 	for (i = 2; i < nelements; i++)
 	{
-		/* TODO: use spaces here, Qt Creator fuck you */
-		pixels[i] = (((long) nextPixel[0]) << 24)
-			  | (((long) nextPixel[1]) << 16)
-			  | (((long) nextPixel[2]) << 8)
-			  | (((long) nextPixel[3]) << 0);
+		pixels[i] = read_color_quad(nextPixel);
 		nextPixel += 4;
 	}
 
