@@ -772,7 +772,7 @@ static BOOL convert_rail_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 	int i;
 	int nelements;
 
-	argbPixels = malloc(4 * iconInfo->width * iconInfo->height);
+	argbPixels = calloc(iconInfo->width * iconInfo->height, 4);
 	if (!argbPixels)
 		goto error;
 
