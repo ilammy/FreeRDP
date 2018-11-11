@@ -676,13 +676,15 @@ static BOOL convert_icon_color_to_argb(ICON_INFO* iconInfo, BYTE* argbPixels)
 		format = PIXEL_FORMAT_RGB8;
 		break;
 	case 16:
-		format = PIXEL_FORMAT_RGB15; /* Yes, RGB555. */
+		/* Yes, it's RGB555, not RGB565. */
+		format = PIXEL_FORMAT_RGB15;
 		break;
 	case 24:
 		format = PIXEL_FORMAT_RGB24;
 		break;
 	case 32:
-		format = PIXEL_FORMAT_ARGB32;
+		/* BGRA because endianness is fun. */
+		format = PIXEL_FORMAT_BGRA32;
 		break;
 	default:
 		WLog_WARN(TAG, "invalid icon bpp: %d", iconInfo->bpp);
