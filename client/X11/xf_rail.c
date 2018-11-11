@@ -831,8 +831,6 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 	xfRailIcon *icon;
 	BOOL replaceIcon;
 
-	WLog_DBG(TAG, "id=%08X flags=%08X", orderInfo->windowId, orderInfo->fieldFlags);
-
 	railWindow = xf_rail_get_window_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
 	{
