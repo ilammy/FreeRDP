@@ -817,7 +817,7 @@ static void xf_rail_set_window_icon(xfContext* xfc,
 		(unsigned char*) icon->data, icon->length);
 }
 
-static xfAppWindow* xf_rail_window_get_by_id(xfContext* xfc, UINT32 windowId)
+static xfAppWindow* xf_rail_get_window_by_id(xfContext* xfc, UINT32 windowId)
 {
 	return (xfAppWindow*) HashTable_GetItemValue(xfc->railWindows,
 		(void*)(UINT_PTR) windowId);
@@ -833,7 +833,7 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 
 	WLog_DBG(TAG, "id=%08X flags=%08X", orderInfo->windowId, orderInfo->fieldFlags);
 
-	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
+	railWindow = xf_rail_get_window_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
 	{
 		/* TODO: the spec tells us to ignore such orders */
@@ -868,7 +868,7 @@ static BOOL xf_rail_window_cached_icon(rdpContext* context,
 	xfRailIcon *icon;
 	BOOL replaceIcon;
 
-	railWindow = xf_rail_window_get_by_id(xfc, orderInfo->windowId);
+	railWindow = xf_rail_get_window_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
 	{
 		WLog_DBG(TAG, "failed to get window for ID %04X", orderInfo->windowId);
