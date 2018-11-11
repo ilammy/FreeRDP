@@ -635,8 +635,13 @@ static void fill_gdi_palette_for_icon(ICON_INFO* iconInfo, gdiPalette *palette)
 {
 	UINT32 i;
 
-	palette->format = PIXEL_FORMAT_BGRA32;
+	palette->format = PIXEL_FORMAT_BGRX32;
 	ZeroMemory(palette->palette, sizeof(palette->palette));
+
+	/*
+	 * DIB color palettes are arrays of RGBQUAD structs which store
+	 * colors in BGRX format.
+	 */
 
 	if ((iconInfo->cbColorTable % 4 != 0) || (iconInfo->cbColorTable / 4 > 256))
 	{
