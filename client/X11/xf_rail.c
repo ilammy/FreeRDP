@@ -707,6 +707,16 @@ static BOOL convert_icon_color_to_argb(ICON_INFO* iconInfo, BYTE* argbPixels)
 	);
 }
 
+static inline UINT32 div_ceil(UINT32 a, UINT32 b)
+{
+	return (a + (b - 1)) / b;
+}
+
+static inline UINT32 round_up(UINT32 a, UINT32 b)
+{
+	return b * div_ceil(a, b);
+}
+
 static void apply_icon_alpha_mask(ICON_INFO* iconInfo, BYTE* argbPixels)
 {
 	BYTE nextBit;
@@ -718,12 +728,11 @@ static void apply_icon_alpha_mask(ICON_INFO* iconInfo, BYTE* argbPixels)
 		return;
 
 	/*
-	 * Stride is based on height rather than width because the server
-	 * seems to do so. For example, for 16x16 icons cbBitsMask is 64
-	 * (while in fact it should be 16 * 16 / 8 = 32), with two bytes
-	 * of padding at the end of each row.
+	 * Each byte encodes 8 adjacent pixels (with LSB padding as needed).
+	 * And due to hysterical raisins, stride of Microsoft's DIB bitmaps
+	 * must be a multiple of 4.
 	 */
-	stride = iconInfo->cbBitsMask / iconInfo->height;
+	stride = round_up(div_ceil(iconInfo->width, 8), 4);
 
 	for (y = 0; y < iconInfo->height; y++)
 	{
