@@ -810,6 +810,7 @@ static void xf_rail_set_window_icon(xfContext* xfc,
 	XChangeProperty(xfc->display, railWindow->handle, xfc->_NET_WM_ICON,
 		XA_CARDINAL, 32, replace ? PropModeReplace : PropModeAppend,
 		(unsigned char*) icon->data, icon->length);
+	XFlush(xfc->display);
 }
 
 static xfAppWindow* xf_rail_get_window_by_id(xfContext* xfc, UINT32 windowId)
