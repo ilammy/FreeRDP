@@ -808,10 +808,10 @@ error:
 	return FALSE;
 }
 
-static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon, BOOL replace)
+static void xf_rail_set_window_icon(xfContext* xfc,
+                                    xfAppWindow* railWindow, xfRailIcon *icon,
+                                    BOOL replace)
 {
-	xfContext* xfc = railWindow->xfc; /* TODO: pass as argument */
-
 	XChangeProperty(xfc->display, railWindow->handle, xfc->_NET_WM_ICON,
 		XA_CARDINAL, 32, replace ? PropModeReplace : PropModeAppend,
 		(unsigned char*) icon->data, icon->length);
@@ -855,7 +855,7 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 	convert_rail_icon(windowIcon->iconInfo, icon);
 
 	replaceIcon = !!(orderInfo->fieldFlags & WINDOW_ORDER_STATE_NEW);
-	xf_rail_window_set_icon(railWindow, icon, replaceIcon);
+	xf_rail_set_window_icon(xfc, railWindow, icon, replaceIcon);
 
 	return TRUE;
 }
@@ -887,7 +887,7 @@ static BOOL xf_rail_window_cached_icon(rdpContext* context,
 	}
 
 	replaceIcon = !!(orderInfo->fieldFlags & WINDOW_ORDER_STATE_NEW);
-	xf_rail_window_set_icon(railWindow, icon, replaceIcon);
+	xf_rail_set_window_icon(xfc, railWindow, icon, replaceIcon);
 
 	return TRUE;
 }
