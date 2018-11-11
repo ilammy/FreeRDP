@@ -774,23 +774,17 @@ static BOOL convert_rail_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 
 	argbPixels = malloc(4 * iconInfo->width * iconInfo->height);
 	if (!argbPixels)
-		return FALSE;
+		goto error;
 
 	if (!convert_icon_color_to_argb(iconInfo, argbPixels))
-	{
-		free(argbPixels);
-		return FALSE;
-	}
+		goto error;
 
 	apply_icon_alpha_mask(iconInfo, argbPixels);
 
 	nelements = 2 + iconInfo->width * iconInfo->height;
 	pixels = realloc(railIcon->data, nelements * sizeof(*pixels));
 	if (!pixels)
-	{
-		free(argbPixels);
-		return FALSE;
-	}
+		goto error;
 
 	railIcon->data = pixels;
 	railIcon->length = nelements;
@@ -808,6 +802,10 @@ static BOOL convert_rail_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 	free(argbPixels);
 
 	return TRUE;
+
+error:
+	free(argbPixels);
+	return FALSE;
 }
 
 static void xf_rail_window_set_icon(xfAppWindow* railWindow, xfRailIcon *icon, BOOL replace)
