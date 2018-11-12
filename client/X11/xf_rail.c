@@ -612,8 +612,6 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
 
 static BOOL convert_rail_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 {
-	WLog_DBG(TAG, "convert icon: cacheEntry=%u cacheId=%u bpp=%u width=%u height=%u",
-		iconInfo->cacheId, iconInfo->cacheEntry, iconInfo->bpp, iconInfo->width, iconInfo->height);
 	return TRUE;
 }
 
