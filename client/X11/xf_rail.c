@@ -616,7 +616,8 @@ static BOOL convert_rail_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 }
 
 static void xf_rail_set_window_icon(xfContext* xfc,
-                                    xfAppWindow* railWindow, xfRailIcon *icon)
+                                    xfAppWindow* railWindow, xfRailIcon *icon,
+                                    BOOL replace)
 {
 }
 
@@ -632,6 +633,7 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 	xfContext* xfc = (xfContext*) context;
 	xfAppWindow* railWindow;
 	xfRailIcon *icon;
+	BOOL replaceIcon;
 
 	railWindow = xf_rail_get_window_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
@@ -653,7 +655,8 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 		WLog_DBG(TAG, "failed to convert icon for window %08X", orderInfo->windowId);
 	}
 
-	xf_rail_set_window_icon(xfc, railWindow, icon);
+	replaceIcon = !!(orderInfo->fieldFlags & WINDOW_ORDER_STATE_NEW);
+	xf_rail_set_window_icon(xfc, railWindow, icon, replaceIcon);
 
 	return TRUE;
 }
@@ -664,6 +667,7 @@ static BOOL xf_rail_window_cached_icon(rdpContext* context,
 	xfContext* xfc = (xfContext*) context;
 	xfAppWindow* railWindow;
 	xfRailIcon *icon;
+	BOOL replaceIcon;
 
 	railWindow = xf_rail_get_window_by_id(xfc, orderInfo->windowId);
 	if (!railWindow)
@@ -680,7 +684,8 @@ static BOOL xf_rail_window_cached_icon(rdpContext* context,
 		return FALSE;
 	}
 
-	xf_rail_set_window_icon(xfc, railWindow, icon);
+	replaceIcon = !!(orderInfo->fieldFlags & WINDOW_ORDER_STATE_NEW);
+	xf_rail_set_window_icon(xfc, railWindow, icon, replaceIcon);
 
 	return TRUE;
 }
