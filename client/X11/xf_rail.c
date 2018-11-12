@@ -610,10 +610,11 @@ static xfRailIcon* RailIconCache_Lookup(xfRailIconCache* cache,
 	return &cache->entries[cache->numCacheEntries * cacheId + cacheEntry];
 }
 
-static void xf_rail_convert_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
+static BOOL convert_rail_icon(ICON_INFO* iconInfo, xfRailIcon *railIcon)
 {
 	WLog_DBG(TAG, "convert icon: cacheEntry=%u cacheId=%u bpp=%u width=%u height=%u",
 		iconInfo->cacheId, iconInfo->cacheEntry, iconInfo->bpp, iconInfo->width, iconInfo->height);
+	return TRUE;
 }
 
 static void xf_rail_set_window_icon(xfContext* xfc,
@@ -649,7 +650,7 @@ static BOOL xf_rail_window_icon(rdpContext* context,
 		return FALSE;
 	}
 
-	if (!xf_rail_convert_icon(windowIcon->iconInfo, icon))
+	if (!convert_rail_icon(windowIcon->iconInfo, icon))
 	{
 		WLog_DBG(TAG, "failed to convert icon for window %08X", orderInfo->windowId);
 	}
