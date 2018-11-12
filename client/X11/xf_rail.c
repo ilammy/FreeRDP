@@ -63,9 +63,8 @@ static const char* movetype_names[] =
 
 struct xf_rail_icon
 {
-	UINT16 width;
-	UINT16 height;
-	BYTE* argbPixels;
+	long *data;
+	int length;
 };
 typedef struct xf_rail_icon xfRailIcon;
 
@@ -580,9 +579,9 @@ static void RailIconCache_Free(xfRailIconCache* cache)
 	{
 		for (i = 0; i < cache->numCaches * cache->numCacheEntries; i++)
 		{
-			free(cache->entries[i].argbPixels);
+			free(cache->entries[i].data);
 		}
-		free(cache->scratch.argbPixels);
+		free(cache->scratch.data);
 		free(cache->entries);
 		free(cache);
 	}
